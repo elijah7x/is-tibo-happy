@@ -1,0 +1,46 @@
+{
+  "status": "OWNER APPROVED FINAL",
+  "version": "final11",
+  "grid": 48,
+  "states": [
+    "happy",
+    "unhappy"
+  ],
+  "aliases": {
+    "waiting": "happy",
+    "offline": "unhappy + grayscale"
+  },
+  "canonicalRuntimeAsset": "avatar.json",
+  "canonicalDesignSources": [
+    "../../designs/avatars/approved/tibo-happy.json",
+    "../../designs/avatars/approved/tibo-unhappy.json"
+  ],
+  "pngSizes": [
+    48,
+    96,
+    144,
+    192,
+    384
+  ],
+  "nativeDisplaySizeCssPx": 48,
+  "resampling": "nearest-neighbor only",
+  "forbidden": [
+    "JPEG",
+    "lossy WebP/AVIF",
+    "bilinear/bicubic scaling",
+    "contact sheet as source"
+  ],
+  "sha256": {
+    "avatar.json": "6a7c4dd16198b18eebea435d22d8c30290b8e66bc24cadefb53cb344ef754413",
+    "png/tibo-happy-48.png": "ac8919916b22bf983554db2a8b80827a2ddf782698ec1e0d69ff66cbf8219f22",
+    "png/tibo-happy-96.png": "facffe5d3ddbabf57b4e09109b7cdfc553e30461cb6e1892daf99cc21c8e0ad6",
+    "png/tibo-happy-144.png": "3cb697b385cd146c36aa6a4c34fe74bdaa6ea0c80111e1bcb416a23529a345e8",
+    "png/tibo-happy-192.png": "ce47b5a3f0f24ce06275efae25fb0767d052ab581468174b78ddbe765250c47c",
+    "png/tibo-happy-384.png": "4a4de3a07ef5ec368500d8154d5af61d2eb0d35540fce16444ef7e3cf051d188",
+    "png/tibo-unhappy-48.png": "da29da516a52ebb4b4985dac7f38fc4f9405f12923012697a71c4ca5c9f83db5",
+    "png/tibo-unhappy-96.png": "c45f3a7cc994fb72e83816ed3e371204e3f92b5a11454e8158f602215a2c4ceb",
+    "png/tibo-unhappy-144.png": "2e991fc30f05d216f458916bcb6d89857cfdbb9a713897f8dedcd6d76735cac6",
+    "png/tibo-unhappy-192.png": "582a6a58cb4f7ec5f7a1dce4260985b529a79b87ab2611781e353164825e19fd",
+    "png/tibo-unhappy-384.png": "6c7e99b2164d862a4972978a81ea0bf6c5b121f0f58f67d58eafd3c8ade27f29"
+  }
+}

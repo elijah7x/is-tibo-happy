@@ -1,0 +1,9 @@
+out/
+*.pid
+.DS_Store
+node_modules/
+__pycache__/
+spike/out/
+assets/ref/
+state-cache.json
+daemon.log
