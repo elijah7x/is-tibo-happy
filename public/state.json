@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "fetched_at": "2026-09-21T02:54:32.238Z",
+  "fetched_at": "2026-09-21T02:59:48.225Z",
   "source_url": "https://codex-reset.com/api/forecast",
   "upstream": {
     "mode": "model",
-    "updated_at": "2026-09-21T02:53:26.303Z",
+    "updated_at": "2026-09-21T02:58:26.310Z",
     "probabilities": {
       "raw_24h": 0.23953072768015632,
       "raw_48h": 0.4216864858573275,
@@ -87,7 +87,7 @@
     },
     "context": {
       "window_days": 7,
-      "since": "2026-09-14T02:53:26.303Z",
+      "since": "2026-09-14T02:58:26.310Z",
       "evidence_ids": [
         "2101352781219258527"
       ],
