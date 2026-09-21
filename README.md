@@ -1,5 +1,7 @@
 # is-tibo-happy
 
+**English** | [简体中文](README.zh-CN.md)
+
 A tiny companion that lives inside the Codex desktop profile menu: pixel-art Tibo, his mood, and one line about the next reset.
 
 When Tibo ([@thsottiaux](https://x.com/thsottiaux)) teases a Codex usage reset, Tibo is **HAPPY** (red). After three days of silence he turns **UNHAPPY** (gray).
@@ -101,16 +103,6 @@ The installer records the current Node absolute path. Deleting or switching that
 
 **Hack on it?**
 Runtime is 5 dependency-free files in `src/` (~900 lines). `node --test 'test/*.test.mjs'` runs 50 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
-
----
-
-## 中文速览
-
-Codex 桌面版左下角账号菜单里的一张小卡片：像素 Tibo 头像 + 心情（红 = 有重置预告，灰 = 三天没消息）+ 一行重置时间。非官方玩具项目，与 OpenAI、Tibo 无关；显示的是全局预告，**不是你个人额度的重置时刻**。
-
-**安装**（需要 macOS + Codex 桌面版 + Node ≥ 22）：跑上面第二条 jsDelivr 命令即可，装完即生效（Codex 会重启一次）。**卸载**：跑 `uninstall.sh` 那行命令，干净无残留。
-
-**装前须知**：为实现注入，Codex 会以调试端口 9333 运行，本机程序理论上可借它读取界面内容（仅本机，外网不可达）。介意请勿装。
 
 ---
 
