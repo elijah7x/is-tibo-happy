@@ -84,11 +84,12 @@ The source sites only ever see one polite cron job. Four fallback tiers, all tim
 | An exact time | HAPPY · `reset in 6 days` / `reset in ~3h` / `reset imminent` |
 | A deadline ("by Tuesday") | HAPPY · `reset by Tuesday` |
 | A tease ("coming Tuesday") | HAPPY · `reset expected Tuesday` |
+| Teased time passed, unconfirmed | HAPPY · `reset any time now` |
 | It just reset (≤3 days) | HAPPY · `just reset` / `last reset 2d ago` |
 | Nothing for 3+ days | UNHAPPY · `no reset news` |
 | No data for 12+ hours | OFFLINE · `data unavailable` |
 
-Weekdays are converted to **your timezone** (his "Tuesday" may be Wednesday morning in Beijing). Any signal means HAPPY, even six days out. Card text follows the Codex UI language (中文 / English).
+Weekdays are converted to **your timezone** (his "Tuesday" may be Wednesday morning in Beijing). Any signal means HAPPY, even six days out — and a tease stays HAPPY until it lands or is clearly missed (a 36h late-grace window); announced resets almost never slip, they just arrive early or late. Card text follows the Codex UI language (中文 / English).
 
 ## FAQ
 

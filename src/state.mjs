@@ -6,6 +6,9 @@
 // 状态词与颜色是产品规则（用户定的搞怪规则），显示层只管渲染。
 
 const UNHAPPY_AFTER_DAYS = 3;
+// 预告极少跳票只会迟到：目标窗口结束后再宽限 36h 才算信号失效；
+// 信号发布距今 >7 天一律视为陈旧
+const LATE_GRACE = 36 * 3600e3, SIG_MAX_AGE = 7 * 86400e3;
 
 const DAY = 86400e3, HOUR = 3600e3;
 
@@ -70,6 +73,9 @@ function setTarget(detail, text, postAtMs, timeWindow) {
   }
 }
 
+// 目标窗口结束 + 迟到宽限内仍算活信号（预告极少跳票，只会早来或迟到）
+const stillFresh = (t, now) => t && now < t.end + LATE_GRACE;
+
 // 窗口字段合法性：两端都可解析且 end > start 才采纳
 function setWindow(detail, win) {
   const s = Date.parse(win?.start), e = Date.parse(win?.end);
@@ -83,57 +89,95 @@ export function deriveForecast(apiJson, now = Date.now()) {
   if (!apiJson || typeof apiJson !== 'object' || Array.isArray(apiJson)) {
     return { kind: 'offline', detail: {} };
   }
-  const detail = {};
+  const last = Date.parse(apiJson.last_reset_at || '');
+  // 信号发布时间早于最近一次重置 → 该预告已兑现，让位账本分支（"刚刚重置"）
+  const fulfilled = atMs => Number.isFinite(last) && Number.isFinite(atMs) && atMs < last;
 
   // 1) 明确承诺：有预告不管多远都 HAPPY（倒计时 6 天也是 HAPPY）
   const commit = apiJson.commitment || apiJson.official_signal;
   if (commit) {
-    detail.confirmed = true;
-    detail.scheduledISO = commit.scheduled_for || commit.at || commit.time || null;
-    detail.teaseText = commit.text || commit.quote || commit.display_text || null;
-    detail.tweetUrl = commit.url || commit.tweet_url || null;
-    setWindow(detail, apiJson.teased_window || commit.window);
-    setTarget(detail, detail.teaseText,
+    const d = {
+      confirmed: true,
+      scheduledISO: commit.scheduled_for || commit.at || commit.time || null,
+      teaseText: commit.text || commit.quote || commit.display_text || null,
+      tweetUrl: commit.url || commit.tweet_url || null,
+    };
+    setWindow(d, apiJson.teased_window || commit.window);
+    setTarget(d, d.teaseText,
       Date.parse(commit.at || commit.posted_at || '') || now, apiJson.time_window);
-    return { kind: 'happy', detail };
+    const anchor = Date.parse(commit.posted_at || commit.announced_at || '')
+      || Date.parse(d.scheduledISO || '') || Date.parse(d.targetStart || '');
+    const sf = Date.parse(d.scheduledISO || '');
+    const stale = Number.isFinite(sf) && sf + LATE_GRACE <= now;   // 过点超宽限 = 跳票
+    if (!fulfilled(anchor) && !stale) return { kind: 'happy', detail: d };
   }
 
-  // 2) 暗示级信号：未过期才算数（防止陈旧暗示残留）。
-  // expires_at 存在时以它为准；缺失时按发布起 72h 封顶（不再永久有效）
+  // 2) 暗示级信号：上游 expires_at 失效、72h 新鲜度、目标窗口+迟到宽限，任一存活即算数
   const tease = apiJson.tease_signal;
   const teasePostAt = Date.parse(tease?.post?.at || '');
-  const teaseExp = Date.parse(tease?.expires_at || '');
-  const teaseLive = tease && typeof tease === 'object' && tease.post && typeof tease.post === 'object'
-    && Number.isFinite(teasePostAt)
-    && (Number.isFinite(teaseExp) ? teaseExp > now : now - teasePostAt < 72 * HOUR);
-  if (teaseLive) {
-    detail.teaseText = tease.post.quote || null;
-    detail.tweetUrl = tease.post.url || null;
-    detail.teaseTier = tease.tier || null;
-    setWindow(detail, apiJson.teased_window);
-    setTarget(detail, detail.teaseText, teasePostAt, apiJson.time_window);
-    return { kind: 'happy', detail };
+  if (tease && typeof tease === 'object' && tease.post && typeof tease.post === 'object'
+      && Number.isFinite(teasePostAt) && now - teasePostAt < SIG_MAX_AGE
+      && !fulfilled(teasePostAt)) {
+    const teaseExp = Date.parse(tease.expires_at || '');
+    const tt = resolveTarget(tease.post.quote, teasePostAt, apiJson.time_window);
+    if ((Number.isFinite(teaseExp) && teaseExp > now)
+        || now - teasePostAt < 72 * HOUR
+        || stillFresh(tt, now)) {
+      const d = {
+        teaseText: tease.post.quote || null,
+        tweetUrl: tease.post.url || null,
+        teaseTier: tease.tier || null,
+      };
+      setWindow(d, apiJson.teased_window);
+      if (tt) {
+        d.targetStart = new Date(tt.start).toISOString();
+        d.targetEnd = new Date(tt.end).toISOString();
+      }
+      return { kind: 'happy', detail: d };
+    }
   }
 
-  // 2b) 独立窗口预告：无承诺无暗示但窗口合法且未结束，仍算信号（spec 规则 2）
+  // 2b) 弱信号兜底：上游撤了 tease_signal 但 latest_hint（近 7 天的暗示推文）仍在，
+  // 且目标窗口未过迟到宽限 → 维持 hedge 级 HAPPY。quote 解不出目标则不算信号。
+  const hint = apiJson.latest_hint;
+  const hintAt = Date.parse(hint?.at || '');
+  if (hint && typeof hint === 'object' && Number.isFinite(hintAt)
+      && now - hintAt < SIG_MAX_AGE && !fulfilled(hintAt)) {
+    const ht = resolveTarget(hint.quote, hintAt, apiJson.time_window);
+    if (stillFresh(ht, now)) {
+      const d = {
+        teaseText: hint.quote || null,
+        tweetUrl: hint.url || null,
+        teaseTier: 'hint',
+        targetStart: new Date(ht.start).toISOString(),
+        targetEnd: new Date(ht.end).toISOString(),
+      };
+      return { kind: 'happy', detail: d };
+    }
+  }
+
+  // 2c) 独立窗口预告：无承诺无暗示但窗口合法且未过迟到宽限，仍算信号
   {
     const ws = Date.parse(apiJson.teased_window?.start), we = Date.parse(apiJson.teased_window?.end);
-    if (Number.isFinite(ws) && Number.isFinite(we) && we > ws && we > now) {
-      detail.windowStart = apiJson.teased_window.start;
-      detail.windowEnd = apiJson.teased_window.end;
-      return { kind: 'happy', detail };
+    if (Number.isFinite(ws) && Number.isFinite(we) && we > ws
+        && we + LATE_GRACE > now && !fulfilled(ws)) {
+      return {
+        kind: 'happy',
+        detail: { windowStart: apiJson.teased_window.start, windowEnd: apiJson.teased_window.end },
+      };
     }
   }
 
   // 3) 账本：近期重置过依然 HAPPY（≤3 天）；>3 天且无信号 → UNHAPPY
-  const last = Date.parse(apiJson.last_reset_at || '');
   if (!Number.isFinite(last)) {
     // 数据在但推不出 → 两态口径下归 unhappy
-    return { kind: 'unhappy', detail };
+    return { kind: 'unhappy', detail: {} };
   }
-  detail.lastResetISO = new Date(last).toISOString();
-  detail.daysSince = Math.max(0, (now - last) / DAY);   // 时钟偏差：未来时间按"刚刚"算
-  detail.prob48 = apiJson.probabilities?.rounded_48h ?? null;
+  const detail = {
+    lastResetISO: new Date(last).toISOString(),
+    daysSince: Math.max(0, (now - last) / DAY),   // 时钟偏差：未来时间按"刚刚"算
+    prob48: apiJson.probabilities?.rounded_48h ?? null,
+  };
   return detail.daysSince > UNHAPPY_AFTER_DAYS
     ? { kind: 'unhappy', detail }
     : { kind: 'happy', detail };
@@ -144,39 +188,49 @@ export function deriveState(apiJson, now = Date.now()) {
   if (!apiJson || typeof apiJson !== 'object' || !Array.isArray(apiJson.events)) {
     return { kind: 'offline', detail: {} };
   }
-  const detail = {};
+  const times = apiJson.events
+    .map(e => Date.parse(e?.announced_at || ''))
+    .filter(t => Number.isFinite(t));
+  const last = times.length ? Math.max(...times) : NaN;
+  // 信号发布时间早于最近事件 → 预告已兑现，让位账本
+  const fulfilled = atMs => Number.isFinite(last) && Number.isFinite(atMs) && atMs < last;
 
   const s = apiJson.scheduled;
   if (s && typeof s === 'object') {
     if (Number.isFinite(Date.parse(s.scheduled_for || ''))) {
-      detail.confirmed = true;
-      detail.scheduledISO = s.scheduled_for;
-      detail.teaseText = s.display_text || s.text || null;
-      detail.resetType = s.reset_type || null;
-      detail.tweetUrl = s.tweet_url || null;
-      return { kind: 'happy', detail };
-    }
-    // 只有文本预告：48h 内宣布的才算活信号，过期视为陈旧忽略
-    const txt = s.display_text || s.text || null;
-    const ann = Date.parse(s.announced_at || '');
-    if (txt && Number.isFinite(ann) && now - ann <= 48 * HOUR) {
-      detail.teaseText = txt;
-      detail.teaseTier = 'T1';
-      detail.tweetUrl = s.tweet_url || null;
-      setTarget(detail, txt, ann, apiJson.time_window);
-      return { kind: 'happy', detail };
+      const sf = Date.parse(s.scheduled_for);
+      const ann = Date.parse(s.announced_at || '');
+      // scheduled 时刻已过宽限或已被账本兑现 → 不再算信号
+      if (sf + LATE_GRACE > now && !fulfilled(ann || sf)) {
+        return {
+          kind: 'happy',
+          detail: {
+            confirmed: true,
+            scheduledISO: s.scheduled_for,
+            teaseText: s.display_text || s.text || null,
+            resetType: s.reset_type || null,
+            tweetUrl: s.tweet_url || null,
+          },
+        };
+      }
+    } else {
+      // 只有文本预告：48h 内宣布或目标窗口未过迟到宽限才算活信号
+      const txt = s.display_text || s.text || null;
+      const ann = Date.parse(s.announced_at || '');
+      const tt = txt && Number.isFinite(ann) ? resolveTarget(txt, ann, apiJson.time_window) : null;
+      if (tt && (now - ann <= 48 * HOUR || stillFresh(tt, now)) && !fulfilled(ann)) {
+        const d = { teaseText: txt, teaseTier: 'T1', tweetUrl: s.tweet_url || null };
+        d.targetStart = new Date(tt.start).toISOString();
+        d.targetEnd = new Date(tt.end).toISOString();
+        return { kind: 'happy', detail: d };
+      }
     }
   } else if (s) {
-    detail.teaseText = String(s);
-    return { kind: 'happy', detail };
+    return { kind: 'happy', detail: { teaseText: String(s) } };
   }
 
-  const times = apiJson.events
-    .map(e => Date.parse(e?.announced_at || ''))
-    .filter(t => Number.isFinite(t));
+  const detail = {};
   if (!times.length) return { kind: 'unhappy', detail };
-
-  const last = Math.max(...times);
   detail.lastResetISO = new Date(last).toISOString();
   detail.daysSince = Math.max(0, (now - last) / DAY);
 
@@ -205,7 +259,7 @@ const COPY = {
     days: d => `${d} 天后重置`,
     byDay: dow => `最晚周${CN_DAY[dow]}重置`,
     expect: { today: '预计今天重置', tomorrow: '预计明天重置', dow: d => `预计周${CN_DAY[d]}重置` },
-    announced: '已预告重置', hinted: '有重置暗示',
+    announced: '已预告重置', hinted: '有重置暗示', due: '随时重置',
     justNow: '刚刚重置', ago: d => `上次重置 ${d} 天前`,
     none: '暂无重置预告', offline: '数据不可用',
   },
@@ -215,7 +269,7 @@ const COPY = {
     days: d => `reset in ${d} day${d === 1 ? '' : 's'}`,
     byDay: dow => `reset by ${EN_DAY[dow]}`,
     expect: { today: 'reset expected today', tomorrow: 'reset expected tomorrow', dow: d => `reset expected ${EN_DAY[d]}` },
-    announced: 'reset announced', hinted: 'reset hinted',
+    announced: 'reset announced', hinted: 'reset hinted', due: 'reset any time now',
     justNow: 'just reset', ago: d => `last reset ${d}d ago`,
     none: 'no reset news', offline: 'data unavailable',
   },
@@ -253,12 +307,14 @@ function subLineIn(lang, { kind, detail }, now, tz) {
           if (h < 48) return C.hours(Math.round(h));
           return C.days(Math.round(h / 24));
         }
-        // 刚过点算"即将"（重置传播需要时间），过太久回到"已预告"
-        return now - t < 6 * HOUR ? C.soon : C.announced;
+        // 刚过点算"即将"（重置传播需要时间），更久未落地 = 迟到但预告仍有效
+        return now - t < 6 * HOUR ? C.soon : C.due;
       }
       // 窗口制 → 窗口最晚边的本地星期（hedge 口径，学 codex-reset.com）
       if (detail.windowEnd) {
-        const w = localYMDW(Date.parse(detail.windowEnd), tz);
+        const we = Date.parse(detail.windowEnd);
+        if (Number.isFinite(we) && we <= now) return C.due;   // 窗口已过未确认 → 迟到中
+        const w = localYMDW(we, tz);
         if (w && w.dow >= 0) return C.byDay(w.dow);
       }
       // 暗示/承诺：推文日子（PT 口径）+ UTC 窗口起点 → 本地星期/今天/明天
@@ -267,8 +323,8 @@ function subLineIn(lang, { kind, detail }, now, tz) {
         const te = detail.targetEnd ? Date.parse(detail.targetEnd) : NaN;
         // 已进入预告窗口 → 即将重置
         if (Number.isFinite(te) && ts <= now && now < te) return C.soon;
-        // 窗口已过而暗示仍在 → 不做星期声明
-        if (Number.isFinite(te) && te <= now) return C.hinted;
+        // 窗口已过而暗示仍在 → 迟到中，仍算有效信号
+        if (Number.isFinite(te) && te <= now) return C.due;
         const tgt = localYMDW(ts, tz), cur = localYMDW(now, tz), nxt = localYMDW(now + DAY, tz);
         if (tgt && cur && nxt) {
           // 相对词按用户本地日期说：目标窗口落在本地今天/明天就直说，其余报星期

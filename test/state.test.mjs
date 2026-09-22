@@ -70,8 +70,8 @@ test('post at PT Tuesday evening saying "Tuesday" → that same PT Tuesday, not 
   assert.deepEqual(run(j, SH, now), { kind: 'happy', zh: '即将重置', en: 'reset imminent' });
 });
 
-test('tease with expires_at null does not live forever: post older than 72h is ignored', () => {
-  const now = Date.parse('2026-09-24T12:00:00Z');
+test('tease: post beyond target window + late grace is stale → ignored', () => {
+  const now = Date.parse('2026-09-25T12:00:00Z');   // 窗口端 09-23T02:00 + 36h = 09-24T14:00 已过
   const j = { last_reset_at: LAST, tease_signal: tease('coming in Tuesday', '2026-09-19T16:48:38Z', null) };
   assert.equal(run(j, UTC, now).kind, 'unhappy');
   const fresh = { last_reset_at: LAST, tease_signal: tease('coming in Friday', '2026-09-23T16:48:38Z', null) };
@@ -104,16 +104,16 @@ test('detail carries no volatile timestamp (dedup must work across polls)', () =
 });
 
 // ───────────── C/D. 暗示过期 / 窗口已过但暗示仍在 ─────────────
-test('expired tease is ignored → ledger decides (11d → unhappy)', () => {
-  const now = Date.parse('2026-09-23T12:00:00Z');
+test('expired tease is ignored only after late grace ends → ledger decides', () => {
+  const now = Date.parse('2026-09-24T15:00:00Z');   // 目标窗口端 09-23T02:00 + 36h 已过
   const j = { last_reset_at: LAST, tease_signal: tease('coming in Tuesday'), time_window: WINDOW };
   assert.deepEqual(run(j, UTC, now), { kind: 'unhappy', zh: '暂无重置预告', en: 'no reset news' });
 });
 
-test('tease live but its window already passed → hedged "hinted", no weekday claim', () => {
-  const now = Date.parse('2026-09-23T12:00:00Z');   // Wed noon; window ended Wed 02:00Z
+test('tease live but its window already passed → "due" copy (late, still valid)', () => {
+  const now = Date.parse('2026-09-23T12:00:00Z');   // Wed noon; window ended Wed 02:00Z, grace alive
   const j = { last_reset_at: LAST, tease_signal: tease('coming in Tuesday', '2026-09-19T16:48:38Z', '2026-09-24T00:00:00Z'), time_window: WINDOW };
-  assert.deepEqual(run(j, UTC, now), { kind: 'happy', zh: '有重置暗示', en: 'reset hinted' });
+  assert.deepEqual(run(j, UTC, now), { kind: 'happy', zh: '随时重置', en: 'reset any time now' });
 });
 
 test('tease with unparseable quote → hinted', () => {
@@ -121,9 +121,70 @@ test('tease with unparseable quote → hinted', () => {
   assert.deepEqual(run(j), { kind: 'happy', zh: '有重置暗示', en: 'reset hinted' });
 });
 
-test('tease expires_at exactly == now → treated as expired', () => {
-  const j = { last_reset_at: LAST, tease_signal: tease('coming in Tuesday', '2026-09-19T16:48:38Z', iso(NOW)) };
+test('expires_at 已过只在无其他存活理由时才判死（上游提前撤字段不闪断）', () => {
+  // 帖子仍新鲜（<72h）：expires_at 刚过也维持 HAPPY
+  const live = { last_reset_at: LAST, tease_signal: tease('coming in Tuesday', '2026-09-19T16:48:38Z', iso(NOW)) };
+  assert.equal(run(live).kind, 'happy');
+  // 帖子老、quote 无目标、expires 已过 → 真过期
+  const dead = { last_reset_at: LAST, tease_signal: tease('soon™', '2026-09-15T16:48:38Z', iso(NOW - H)) };
+  assert.equal(run(dead).kind, 'unhappy');
+});
+
+// ───────────── I. 弱信号兜底 latest_hint + 迟到宽限 + 兑现让位 ─────────────
+// 产品规则：官方预告极少跳票，只会早来或迟到。上游撤字段不闪断；落地后让位账本。
+test('upstream dropped tease_signal but latest_hint still fresh → hedged happy (2026-09-22 incident)', () => {
+  const j = {
+    last_reset_at: LAST,
+    latest_hint: { id: 'x', at: '2026-09-19T16:48:38.000Z', url: 'https://x.com/x/1', quote: 'OK fine. But it’s also still coming in Tuesday', day: null },
+    time_window: WINDOW,
+  };
+  const now = Date.parse('2026-09-22T02:00:00Z');   // 目标窗口 09-22T23:00Z 未到
+  assert.deepEqual(run(j, UTC, now), { kind: 'happy', zh: '预计今天重置', en: 'reset expected today' });
+  assert.deepEqual(run(j, SH, now), { kind: 'happy', zh: '预计明天重置', en: 'reset expected tomorrow' });
+});
+
+test('hint target window passed but within late grace → happy "due"', () => {
+  const j = { last_reset_at: LAST, latest_hint: { at: '2026-09-19T16:48:38.000Z', quote: 'coming in Tuesday' }, time_window: WINDOW };
+  const now = Date.parse('2026-09-23T12:00:00Z');   // 窗口结束 10h，仍在 36h 宽限内
+  assert.deepEqual(run(j, UTC, now), { kind: 'happy', zh: '随时重置', en: 'reset any time now' });
+});
+
+test('hint fully stale (window end + 36h passed) → unhappy', () => {
+  const j = { last_reset_at: LAST, latest_hint: { at: '2026-09-19T16:48:38.000Z', quote: 'coming in Tuesday' }, time_window: WINDOW };
+  const now = Date.parse('2026-09-24T15:00:00Z');
+  assert.deepEqual(run(j, UTC, now), { kind: 'unhappy', zh: '暂无重置预告', en: 'no reset news' });
+});
+
+test('latest_hint with unparseable quote is not a signal', () => {
+  const j = { last_reset_at: LAST, latest_hint: { at: '2026-09-19T16:48:38.000Z', quote: 'hmm interesting' } };
   assert.equal(run(j).kind, 'unhappy');
+});
+
+test('latest_hint older than 7d is ignored entirely', () => {
+  const j = { last_reset_at: LAST, latest_hint: { at: '2026-09-10T16:48:38.000Z', quote: 'coming in Tuesday' } };
+  assert.equal(run(j).kind, 'unhappy');
+});
+
+test('reset landed after the tease was posted → fulfilled → 刚刚重置', () => {
+  const j = {
+    last_reset_at: '2026-09-22T23:30:00.000Z',   // 重置已在周二窗口内落地
+    tease_signal: tease('coming in Tuesday', '2026-09-19T16:48:38Z', '2026-09-25T00:00:00Z'),
+    time_window: WINDOW,
+  };
+  const now = Date.parse('2026-09-23T01:00:00Z');
+  assert.deepEqual(run(j, UTC, now), { kind: 'happy', zh: '刚刚重置', en: 'just reset' });
+});
+
+test('tease posted AFTER last reset → live signal, not fulfilled', () => {
+  const j = { last_reset_at: '2026-09-18T08:00:00Z', tease_signal: tease('coming in Tuesday'), time_window: WINDOW };
+  assert.deepEqual(run(j, LA), { kind: 'happy', zh: '预计周二重置', en: 'reset expected Tuesday' });
+});
+
+test('resets shape: scheduled_for overdue within grace → due; fulfilled → ledger', () => {
+  const j = { scheduled: { scheduled_for: iso(NOW - 8 * H), display_text: 'x', announced_at: iso(NOW - 2 * D) }, events: [{ announced_at: LAST }] };
+  assert.deepEqual(run(j), { kind: 'happy', zh: '随时重置', en: 'reset any time now' });
+  const done = { scheduled: { scheduled_for: '2026-09-19T23:00:00Z', display_text: 'x', announced_at: '2026-09-18T00:00:00Z' }, events: [{ announced_at: '2026-09-20T01:00:00Z' }] };
+  assert.deepEqual(run(done), { kind: 'happy', zh: '刚刚重置', en: 'just reset' });
 });
 
 // ───────────── E. 明确承诺 → 倒计时 ─────────────
@@ -138,10 +199,15 @@ test('commitment countdown granularity', () => {
   assert.deepEqual(run(c(1.5 * D)), { kind: 'happy', zh: '36 小时后重置', en: 'reset in ~36h' });
 });
 
-test('commitment time just passed (<6h) → imminent; long passed → announced', () => {
+test('commitment time just passed (<6h) → imminent; long passed → due (late)', () => {
   const c = t => ({ last_reset_at: LAST, commitment: { scheduled_for: iso(NOW + t) } });
   assert.deepEqual(run(c(-60e3)), { kind: 'happy', zh: '即将重置', en: 'reset imminent' });
-  assert.deepEqual(run(c(-7 * H)), { kind: 'happy', zh: '已预告重置', en: 'reset announced' });
+  assert.deepEqual(run(c(-7 * H)), { kind: 'happy', zh: '随时重置', en: 'reset any time now' });
+});
+
+test('commitment overdue beyond late grace → stale, falls to ledger', () => {
+  const j = { last_reset_at: LAST, commitment: { scheduled_for: iso(NOW - 2 * D) } };
+  assert.deepEqual(run(j), { kind: 'unhappy', zh: '暂无重置预告', en: 'no reset news' });
 });
 
 test('commitment beats tease when both present', () => {
@@ -156,12 +222,15 @@ test('teased_window end → "by <local weekday of end>"', () => {
   assert.deepEqual(run(j, SH), { kind: 'happy', zh: '最晚周三重置', en: 'reset by Wednesday' });
 });
 
-test('teased_window alone (no commitment, no tease) still counts as a signal (spec rule 2)', () => {
+test('teased_window alone still counts as a signal; overdue within grace → due', () => {
   const j = { last_reset_at: LAST, teased_window: { start: '2026-09-22T23:00:00Z', end: '2026-09-23T02:00:00Z' } };
   assert.deepEqual(run(j, LA), { kind: 'happy', zh: '最晚周二重置', en: 'reset by Tuesday' });
-  // 窗口已过 → 不算信号 → 账本
-  const now = Date.parse('2026-09-24T12:00:00Z');
-  assert.equal(run(j, LA, now).kind, 'unhappy');
+  // 窗口刚过、仍在迟到宽限 → HAPPY "随时重置"
+  const late = Date.parse('2026-09-24T12:00:00Z');
+  assert.deepEqual(run(j, LA, late), { kind: 'happy', zh: '随时重置', en: 'reset any time now' });
+  // 宽限也过了 → 账本
+  const dead = Date.parse('2026-09-25T12:00:00Z');
+  assert.equal(run(j, LA, dead).kind, 'unhappy');
 });
 
 test('teased_window with start > end (malformed) → ignore window, fall to text', () => {
@@ -312,7 +381,7 @@ test('resolveDisplay: cached state is re-worded for "now" (relative words must n
   const later = Date.parse('2026-09-22T06:00:00Z');
   const r = resolveDisplay(null, { state: s, at: written }, later, { tz: UTC });
   assert.equal(r.state.kind, 'happy');
-  assert.equal(r.state.detail.sub.zh, '有重置暗示');
+  assert.equal(r.state.detail.sub.zh, '随时重置');   // 窗口刚过 → 迟到中
   // 账龄型也要随时间走：缓存时 2.5 天，10 小时后仍 2 天；再过 1 天 → 3.9 天 → 仍沿用缓存但副行不撒谎
   const l = derive({ last_reset_at: iso(NOW - 2.5 * D) }, NOW); l.detail.sub = subLine(l, NOW);
   assert.equal(resolveDisplay(null, { state: l, at: NOW }, NOW + 10 * H).state.detail.sub.zh, '上次重置 2 天前');
