@@ -24,7 +24,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 **Requires**: macOS · Codex desktop (ChatGPT.app). No Node, no dependencies — one native binary (Apple Silicon + Intel universal).
 
-That's it. If Codex is running it restarts **once**, silently (no chats lost, no dialogs); then Tibo sits under your name in the bottom-left account menu. Auto-starts on login, re-attaches when Codex restarts.
+That's it. If Codex is running, Tibo attaches to it **without restarting** — no chats lost, no dialogs, nothing interrupted. If Codex isn't running it just shows up next time you open it. Auto-starts on login, re-attaches whenever Codex restarts.
 
 ## Update
 
@@ -51,11 +51,11 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 
 ## ⚠️ Before you install
 
-To draw inside Codex, ChatGPT.app runs with `--remote-debugging-port=9333`:
+To draw inside Codex, the daemon briefly opens the app's built-in Node inspector (`SIGUSR1` → `127.0.0.1:9229`) and injects the card through Electron's own `webContents` API:
 
-- The port is reachable by **any local process** while Codex runs — in theory another program on your Mac could read the Codex UI through it
-- Loopback (127.0.0.1) only — never exposed to LAN or the internet
-- Uninstalling relaunches Codex normally, closing the port right away
+- The inspector is loopback-only and **closed right after each attach** (a few hundred ms per cycle) — no debug port is left listening
+- During that window any local process could reach it — same loopback trust boundary as any local tool
+- On Codex builds without the inspector handler it falls back to launching with `--remote-debugging-port=9333` (loopback-only, stays open while Codex runs); uninstalling relaunches Codex normally either way
 
 If local-process isolation matters to you, don't install.
 
@@ -64,7 +64,8 @@ If local-process isolation matters to you, don't install.
 ```
 LaunchAgent daemon (idle ≈ 0% CPU, ~15 MB)
   └─ fetches public reset data every 15 min (and on menu open)
-  └─ injects one card into the profile menu via CDP — app files untouched
+  └─ attaches via SIGUSR1 → Node inspector → webContents.executeJavaScript
+     — injects the card, closes the inspector; app files untouched
 ```
 
 - No app patching, no browser extension, no reading your chats
@@ -104,7 +105,7 @@ Weekdays are converted to **your timezone** (his "Tuesday" may be Wednesday morn
 The daemon re-attaches automatically. If an UI redesign breaks menu detection, the log shows `menu-unmatched` — please open an issue.
 
 **Hack on it?**
-Runtime is a single Rust binary (`native/`, ~1600 lines); the injected card stays JS (`src/widget.js`). `cargo test --manifest-path native/Cargo.toml` runs 75 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
+Runtime is a single Rust binary (`native/`, ~1600 lines); the injected card stays JS (`src/widget.js`). `cargo test --manifest-path native/Cargo.toml` runs 85 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
 
 ---
 

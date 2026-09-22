@@ -22,7 +22,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 **需要**：macOS · Codex 桌面版（ChatGPT.app）。没有 Node、没有任何依赖——就一个原生二进制（Apple Silicon 与 Intel 通用）。
 
-装完即生效：如果 Codex 正在运行，它会**静默重启一次**（对话不丢、无弹窗）——这是唯一一次打扰。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
+装完即生效：Codex 正在运行也**不用重启**——几秒内直接挂上，对话不丢、无弹窗、零打扰；没在运行则下次打开时自动生效。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
 
 ## 更新
 
@@ -34,7 +34,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninstall.sh | bash
 ```
 
-停掉后台服务、删掉所有文件、把 Codex 重启回普通模式（调试端口随之立刻关闭）。不留残余。
+停掉后台服务、删掉所有文件、把 Codex 重启回普通模式（若它带着调试端口也随之关闭）。不留残余。
 
 <details>
 <summary>手动卸载</summary>
@@ -49,11 +49,11 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 
 ## ⚠️ 装前须知
 
-为了把卡片画进 Codex 界面，ChatGPT.app 会以 `--remote-debugging-port=9333` 调试模式运行：
+为了把卡片画进 Codex 界面，守护进程会短暂打开 App 自带的 Node inspector（发 `SIGUSR1` → `127.0.0.1:9229`），经 Electron 自己的 `webContents` 接口注入卡片：
 
-- 这个端口在 Codex 运行期间对**本机所有程序**可达——理论上你电脑上的其它程序能借它读取 Codex 界面内容
-- 只监听 127.0.0.1，局域网和互联网**不可达**
-- 卸载时会把 Codex 重启回普通模式，端口立刻关闭
+- inspector 只监听 127.0.0.1，且**每次附加完立刻关闭**（每轮窗口只有几百毫秒）——不留常驻调试端口
+- 附加窗口内本机程序理论上可达它——这和任何本机工具的信任边界一样
+- 遇到没有 inspector handler 的 Codex 版本，回退为带 `--remote-debugging-port=9333` 启动（仅 127.0.0.1，运行期间常开）；卸载时都会把 Codex 恢复正常
 
 如果你在意"本机程序互相隔离"这层安全模型，请不要安装。
 
@@ -62,7 +62,8 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 ```
 后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 15MB 内存）
   └─ 每 15 分钟拉一次公开重置数据（打开菜单时也顺手刷新）
-  └─ 通过 CDP 往账号菜单注入一张卡片——不改 App 本体
+  └─ SIGUSR1 → Node inspector → webContents.executeJavaScript
+     注入卡片后立即关闭 inspector——不改 App 本体
 ```
 
 - 不改 App 文件、不装浏览器扩展、不读你的对话
@@ -102,7 +103,7 @@ GitHub Actions 每 20 分钟抓一次源站 → 存成 public/state.json
 守护进程会自动重连。如果界面改版导致找不到挂载点，日志里会有 `menu-unmatched`，欢迎开 issue。
 
 **想看源码 / 移植？**
-运行时是一个 Rust 二进制（`native/`，约 1600 行）；注入卡片的 widget 仍是 JS（`src/widget.js`）。`cargo test --manifest-path native/Cargo.toml` 跑 75 条规格测试。Windows/Linux 欢迎 fork 移植——`install.sh` 里就是要重新实现的部分。
+运行时是一个 Rust 二进制（`native/`，约 1600 行）；注入卡片的 widget 仍是 JS（`src/widget.js`）。`cargo test --manifest-path native/Cargo.toml` 跑 85 条规格测试。Windows/Linux 欢迎 fork 移植——`install.sh` 里就是要重新实现的部分。
 
 ---
 

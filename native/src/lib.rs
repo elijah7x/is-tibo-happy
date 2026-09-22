@@ -1,6 +1,7 @@
 // is-tibo-happy 库本体：state/net/cdp/update/daemon 全在这，main.rs 只是 CLI 壳。
 pub mod cdp;
 pub mod daemon;
+pub mod inspector;
 pub mod net;
 pub mod state;
 pub mod update;

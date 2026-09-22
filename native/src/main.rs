@@ -2,6 +2,7 @@
 //   is-tibo-happy [--once|--no-quit|--launch|--no-update]   常驻守护（默认）
 //   is-tibo-happy fetch-state [--out PATH]                  GH Actions 镜像任务（写信封 JSON）
 //   is-tibo-happy update                                   手动触发一次热更新检查
+//   is-tibo-happy probe                                    dev 验证：SIGUSR1 附加活体 App，注入一次后摘出
 //   is-tibo-happy --selftest                               下载产物的冒烟自检（更新前验证用）
 //   is-tibo-happy --version
 use is_tibo_happy::{daemon, net, state, update};
@@ -137,6 +138,7 @@ fn main() {
                 1
             }
         }
+        Some("probe") => daemon::probe(&args),
         Some("fetch-state") => fetch_state(&args),
         Some("update") => {
             // 手动更新同样过安装门禁——repo/target 里的 dev 二进制不能被自我替换

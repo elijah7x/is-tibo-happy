@@ -55,8 +55,8 @@ cat <<'DONE'
 
 ✓ 安装完成，后台服务已启动，无需任何手动操作。
 
-  若 Codex（ChatGPT.app）正在运行，它会被静默重启一次以挂载调试端口
-  —— 对话内容不会丢失，这是唯一一次打扰。
+  · Codex 正在运行 → 不重启不打扰，Tibo 几秒内自动挂上
+  · Codex 没在运行 → 下次你打开它时自动生效
 
   打开侧栏底部账号菜单即可看到 Tibo。
   卸载: curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninstall.sh | bash
