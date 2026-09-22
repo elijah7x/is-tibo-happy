@@ -13,6 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - name: mirror-gap probe（接手时数据已 >4h 说明调度停摆过——本轮标红告警但照常更新）
+        id: gap
+        run: |
+          age=$(python3 -c "
+          import json,datetime
+          t=datetime.datetime.fromisoformat(json.load(open('public/state.json'))['fetched_at'].replace('Z','+00:00'))
+          print(f'{(datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()/3600:.2f}')")
+          echo "state.json fetched_at age: ${age}h"
+          python3 -c "import sys;sys.exit(0 if float('$age')<=4 else 1)" || echo "gap=1" >> "$GITHUB_OUTPUT"
       - name: build fetch-state（同一实现，防双状态机漂移）
         run: cargo build --locked --release --manifest-path native/Cargo.toml
       - run: ./native/target/release/is-tibo-happy fetch-state
@@ -26,3 +35,8 @@ jobs:
           git push
       # jsDelivr @main 边缘缓存最长 12h > 客户端 6h 新鲜窗，push 后主动失效
       - run: curl -fsS "https://purge.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/public/state.json" || true
+      - name: alarm（本轮接手时 fetched_at 已陈旧 >4h → 期间定时调度没跑）
+        if: steps.gap.outputs.gap == '1'
+        run: |
+          echo "::error::mirror gap detected — fetched_at was >4h stale; scheduled runs were not firing"
+          exit 1

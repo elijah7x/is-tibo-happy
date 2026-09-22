@@ -15,7 +15,10 @@ const ASSET_SUMS: &str = "SHA256SUMS";
 pub fn installed(exe_dir: PathBuf) -> bool {
     let want = PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join("Library/Application Support/is-tibo-happy");
-    exe_dir == want
+    // 两侧都 canonicalize：/tmp→/private/tmp 这类软链环境里 raw 路径等值会假阴性，
+    // 已装实例静默永不自更新
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    canon(&exe_dir) == canon(&want)
 }
 
 fn download(url: &str, ua: &str, timeout: Duration) -> Result<Vec<u8>, String> {

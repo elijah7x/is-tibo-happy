@@ -32,7 +32,14 @@ const EN_DAY: &[&str] = &[
 // JS Date.parse 语义移植：带偏移按偏移、无偏移按宿主本地时区、纯日期按 UTC。
 // RFC3339 之外还兼容手写高频形态——分钟精度（"…T07:00Z"）、±HH:MM 偏移等
 fn parse_iso(s: &str) -> Option<i64> {
-    let s = s.trim();
+    // V8 空白语义（实测）：datetime 形态对首尾空白零容忍（NaN），纯日期形态容忍。
+    // chrono 的 %Y 对前导空白宽容——不在入口拦掉会把 datetime 空白也放行
+    if s != s.trim() {
+        return NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
+            .ok()
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+            .map(|n| n.and_utc().timestamp_millis());
+    }
     if let Ok(d) = DateTime::parse_from_rfc3339(s) {
         return Some(d.timestamp_millis());
     }
@@ -432,7 +439,10 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
                 if let Some(s) = get(p, "url").and_then(|u| u.as_str()) {
                     d.insert("tweetUrl".into(), json!(s));
                 }
-                if let Some(s) = get(t, "tier").and_then(|x| x.as_str()) {
+                if let Some(s) = get(t, "tier")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+                {
                     d.insert("teaseTier".into(), json!(s));
                 }
                 set_window(&mut d, get_t(api, "teased_window"));
@@ -987,9 +997,11 @@ pub fn resolve_display(
     let detail_v = s.get("detail").cloned().unwrap_or(json!({}));
     let detail = detail_v.as_object().cloned().unwrap_or_default();
     let last = parse_ms(detail_v.get("lastResetISO"));
+    // JS oracle 用 truthy 判信号（"" / false / 0 都不算），!is_null 会把空串
+    // teaseTier 误判成有信号——缓存重放时 kind 方向整个反掉
     let has_signal = SIGNAL_FIELDS
         .iter()
-        .any(|f| detail_v.get(*f).is_some_and(|v| !v.is_null()));
+        .any(|f| detail_v.get(*f).is_some_and(truthy));
     if !has_signal && last.is_none() {
         return (s, c.clone());
     }

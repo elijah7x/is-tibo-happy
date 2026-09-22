@@ -31,6 +31,7 @@ chmod 755 "$DEST/$NAME"
 [ -f "$PLIST" ] || touch "$DEST/.first-run"   # 仅首次安装授权拉起 App；重装不打扰
 
 echo "▸ 注册并启动后台服务（LaunchAgent）"
+mkdir -p "$(dirname "$PLIST")"   # 全新账户可能还没有 LaunchAgents 目录
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

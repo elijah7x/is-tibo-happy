@@ -1214,3 +1214,38 @@ fn fractional_time_window_hour_not_truncated() {
         iso(ms("2026-09-22T23:00:00Z"))
     );
 }
+
+// 🟡-1 回归：缓存重放的信号判定必须是 JS truthy 语义——teaseTier:""（空串）不算信号。
+// 老代码 !is_null 把它当有信号 → 缓存的 unhappy 被原样回显；JS 会按账本重算成 happy
+#[test]
+fn cache_replay_falsy_signal_fields_recompute_kind() {
+    let cache = json!({
+        "state": {"kind": "unhappy", "detail": {
+            "teaseTier": "",
+            "lastResetISO": "2026-09-19T12:00:00.000Z"   // 1 天前 → ≤3d
+        }},
+        "at": NOW_MS - 1000,
+    });
+    let (disp, _) = resolve_display(None, Some(&cache), NOW_MS, Some(UTC));
+    assert_eq!(disp["kind"], "happy");
+    // confirmed:false 同样 falsy
+    let cache = json!({
+        "state": {"kind": "unhappy", "detail": {
+            "confirmed": false,
+            "lastResetISO": "2026-09-19T12:00:00.000Z"
+        }},
+        "at": NOW_MS - 1000,
+    });
+    let (disp, _) = resolve_display(None, Some(&cache), NOW_MS, Some(UTC));
+    assert_eq!(disp["kind"], "happy");
+}
+
+// 🟡-2 回归：V8 对带首尾空白的时间戳直接拒收——trim 曾造出 JS 没有的宽容面
+#[test]
+fn iso_whitespace_semantics_match_v8() {
+    // V8 实测：datetime 形态空白→NaN；date-only 形态空白→照解析（两侧 trim）
+    assert!(parse_iso_pub(" 2026-09-22T07:00Z").is_none());
+    assert!(parse_iso_pub("2026-09-22T07:00Z ").is_none());
+    assert_eq!(parse_iso_pub(" 2026-09-22"), parse_iso_pub("2026-09-22"));
+    assert_eq!(parse_iso_pub("2026-09-22 "), parse_iso_pub("2026-09-22"));
+}

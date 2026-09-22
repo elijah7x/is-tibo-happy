@@ -504,18 +504,23 @@ impl Daemon {
                 retry = (retry * 2).min(Duration::from_secs(15 * 60));
                 w
             };
-            // 分段 sleep 好让 stopping 快速生效
-            let mut left = wait;
-            while left > Duration::ZERO && !self.stopping.load(Ordering::Relaxed) {
-                let step = left.min(Duration::from_secs(1));
-                thread::sleep(step);
-                left -= step;
-            }
+            sleep_seg(wait, &self.stopping);
         }
     }
 
     fn exe_dir_marker(&self) -> PathBuf {
         exe_dir()
+    }
+}
+
+// 分段 sleep：SIGTERM 到达 1s 内就能醒——整段睡死会让 launchd bootout/升级
+// 等到超时升 SIGKILL，widget 失去优雅摘除机会（会话外实测退出延迟 25s+）
+fn sleep_seg(dur: Duration, stopping: &AtomicBool) {
+    let mut left = dur;
+    while left > Duration::ZERO && !stopping.load(Ordering::Relaxed) {
+        let step = left.min(Duration::from_secs(1));
+        thread::sleep(step);
+        left -= step;
     }
 }
 
@@ -607,7 +612,7 @@ pub fn run(args: &[String]) -> i32 {
             if once {
                 break;
             }
-            thread::sleep(APP_POLL);
+            sleep_seg(APP_POLL, &stopping);
             continue;
         }
         let _ = std::fs::remove_file(&d.first_flag); // 一次性授权已消费（不等 session，防残留循环拉起）
@@ -625,14 +630,14 @@ pub fn run(args: &[String]) -> i32 {
                 if once || stopping.load(Ordering::Relaxed) {
                     break;
                 }
-                thread::sleep(delay);
+                sleep_seg(delay, &stopping);
                 continue;
             }
         }
         if once || stopping.load(Ordering::Relaxed) {
             break;
         }
-        thread::sleep(RECONNECT);
+        sleep_seg(RECONNECT, &stopping);
     }
     0
 }
