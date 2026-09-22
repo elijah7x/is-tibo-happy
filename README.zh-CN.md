@@ -22,7 +22,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 **需要**：macOS · Codex 桌面版（ChatGPT.app）。没有 Node、没有任何依赖——就一个原生二进制（Apple Silicon 与 Intel 通用）。
 
-装完即生效：如果 Codex 正在运行，它会**重启一次**（对话不丢）——这是唯一一次打扰。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
+装完即生效：Codex 没在运行就直接带 Tibo 打开；正在运行则**绝不打扰**——下次你重启 Codex 后自动生效（想立刻用：⌘Q 退出一次，约 30 秒内它带着 Tibo 自己回来）。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
 
 ## 更新
 

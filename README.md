@@ -24,7 +24,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 **Requires**: macOS · Codex desktop (ChatGPT.app). No Node, no dependencies — one native binary (Apple Silicon + Intel universal).
 
-That's it. If Codex is running it restarts **once** (no chats lost); then Tibo sits under your name in the bottom-left account menu. Auto-starts on login, re-attaches when Codex restarts.
+That's it. If Codex isn't running it launches with Tibo right away; if it's running, Tibo activates the next time **you** restart Codex (or ⌘Q once — it comes back within ~30s with Tibo attached). A running app is never interrupted. Auto-starts on login, re-attaches when Codex restarts.
 
 ## Update
 
