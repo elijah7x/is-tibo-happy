@@ -430,7 +430,7 @@ test('resolveDisplay: cached state is re-worded for "now" (relative words must n
 // 真实页面结构精简夹具：DOM data-* 与 RSC 转义 props（\"k\":\"v\"）两种形态都在。
 // targetIso 全页唯一（仅排期卡倒计时组件持有），scheduled_for 是 UTC 绝对时刻。
 const BP = (o = {}) => `<!doctype html><html><head><title>Codex 重置信号监控</title></head><body>
-<div class="product-tracking-reset-overview-row"><span data-reset-today-status="${o.today ?? 'none'}" data-reset-today-date="2026-09-22" data-product-updated-at="2026-09-22T02:08:25.309Z">今日无重置</span>
+<div class="product-tracking-card" data-product-id="${o.pid ?? 'codex'}"><div class="product-tracking-reset-overview-row"><span data-reset-today-status="${o.today ?? 'none'}" data-reset-today-date="2026-09-22" data-product-updated-at="2026-09-22T02:08:25.309Z">今日无重置</span>
 <time class="product-tracking-last-confirmed-reset" dateTime="${o.last ?? '2026-09-12T08:09:17.000Z'}"></time></div>
 ${o.card === null ? '' : `<li class="product-tracking-scheduled-reset"><span data-signal-reset-status="${o.status ?? 'scheduled'}">已排期</span><a href="https://x.com/thsottiaux/status/2101352781219258527"></a></li>`}
 <script>self.__next_f.push([1,"{\\"targetIso\\":\\"${o.sf ?? '2026-09-22T07:00:00.000Z'}\\",\\"publishedAtIso\\":\\"${o.pa ?? '2026-09-19T16:48:38.000Z'}\\"}"])</script>
@@ -470,7 +470,7 @@ test('betteropc: reset landed (last_reset_at updated past posted_at) → fulfill
 });
 
 test('betteropc: terminal/negative card status is not a live signal', () => {
-  for (const status of ['executed', 'cancelled', 'missed', 'done']) {
+  for (const status of ['executed', 'cancelled', 'missed', 'done', '已取消', '已执行', '已重置']) {
     const now = Date.parse('2026-09-22T04:00:00Z');
     assert.equal(runBp({ status }, UTC, now).kind, 'unhappy');
   }
@@ -495,9 +495,23 @@ test('betteropc: garbage inputs → null (caller treats as fetch failure), never
   assert.equal(parseBetteropc(null), null);
   assert.equal(parseBetteropc(42), null);
   assert.equal(parseBetteropc('{}'), null);
-  // 别的产品页（URL 改版/重定向到 claude-code 等）同样带 product-tracking-* 标记 → 必须拒收
-  assert.equal(parseBetteropc(BP().replaceAll('Codex', 'Claude Code')), null);
+  // 别的产品页：即便正文提到 Codex，没有 data-product-id="codex" 就拒收（守卫按身份不认字样）
+  assert.equal(parseBetteropc(BP({ pid: 'claude-code' })), null);
+  assert.equal(parseBetteropc(BP({ pid: 'codex' }).replace('data-product-id', 'data-x-product-id')
+    + '<p>Codex 与 Claude Code 对比</p>'), null);
   // 标记还在但可推导字段全缺（结构改版）→ null 走降级链，不伪装成"无预告"
-  const shell = '<title>Codex</title><div class="product-tracking-x" data-reset-today-status="none"></div>';
+  const shell = '<div class="product-tracking-x" data-product-id="codex" data-reset-today-status="none"></div>';
   assert.equal(parseBetteropc(shell), null);
+  // 捕获值无 ISO 形状 → 按缺失处理：空 publishedAtIso 不再回溯出 ":"，垃圾 dateTime 不成账本
+  const bad = parseBetteropc(BP({ pa: '', last: 'garbage' }));
+  assert.equal(bad.commitment.posted_at, null);
+  assert.equal(bad.last_reset_at, null);
+});
+
+test('betteropc: props-order drift does not steal a neighbour dateTime (audit 2 round)', () => {
+  // RSC props 若把 dateTime 序列化到 className 之前，标记后 400 字符会抓到相邻元素的值
+  const reordered = '<div class="product-tracking-card" data-product-id="codex">'
+    + '"dateTime":"2026-09-12T08:09:17.000Z","className":"product-tracking-last-confirmed-reset"'
+    + '<div class="product-tracking-x"><time dateTime="2026-09-20T00:00:00.000Z"></time></div>';
+  assert.equal(parseBetteropc(reordered).last_reset_at, '2026-09-12T08:09:17.000Z');
 });

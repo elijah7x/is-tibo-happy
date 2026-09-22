@@ -7,7 +7,7 @@ const PRIMARY = SOURCES.primary, RAW = SOURCES.mirrors[0], JSD = SOURCES.mirrors
 const forecast = { last_reset_at: '2026-09-19T00:00:00Z' };
 const resets = { scheduled: null, events: [{ announced_at: '2026-09-19T00:00:00Z' }] };
 const env = (ageMs, upstream = forecast) => ({ schema: 1, fetched_at: new Date(Date.now() - ageMs).toISOString(), source_url: DIRECT, upstream });
-const BP_PAGE = '<title>Codex</title><li class="product-tracking-scheduled-reset"><span data-signal-reset-status="scheduled">已排期</span></li>'
+const BP_PAGE = '<div data-product-id="codex"><li class="product-tracking-scheduled-reset"><span data-signal-reset-status="scheduled">已排期</span></li>'
   + '<time class="product-tracking-last-confirmed-reset" dateTime="2026-09-12T08:09:17.000Z"></time>'
   + '\\"targetIso\\":\\"2026-09-22T07:00:00.000Z\\"';
 

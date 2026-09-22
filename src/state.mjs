@@ -263,26 +263,46 @@ export function derive(upstream, now = Date.now()) {
 //   [data-reset-today-status/date]                     当日状态（北京口径，仅记录不驱动情绪）
 // 归一化后走 deriveForecast，倒计时/迟到宽限/兑现让位/锚定规则全部复用。
 const BP_ATTR = name => new RegExp(name + '["\'\\\\:= ]+([^"\'\\\\,}]+)');
+// 时间字段必须长得像 ISO 时刻，否则按缺失处理——捕获到标记文本/":""/相邻值都算无效
+const BP_ISO = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v : null;
+const BP_DATE = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v : null;
 export function parseBetteropc(html) {
-  // 守卫：必须像 betteropc 的 Codex 产品页。若 URL 被改版重定向到别的产品，
-  // product-tracking-* 标记照样存在——宁可判失败走降级链，也不能拿别家的排期
-  if (typeof html !== 'string' || !html.includes('product-tracking-') || !html.includes('Codex')) return null;
+  // 守卫：必须是 betteropc 的 Codex 产品页。product-tracking-* 是结构标记，
+  // data-product-id="codex" 才是产品身份——URL 改版重定向到别家产品时宁可判失败走降级链
+  if (typeof html !== 'string' || !html.includes('product-tracking-')) return null;
   const attr = (name, seg = html) => seg.match(BP_ATTR(name))?.[1] ?? null;
-  const out = { source: 'betteropc', updated_at: attr('data-product-updated-at') };
+  if (!/^codex$/i.test(attr('data-product-id') || '')) return null;
+  const out = { source: 'betteropc', updated_at: BP_ISO(attr('data-product-updated-at')) };
   const ts = attr('data-reset-today-status');
-  if (ts) out.today = { status: ts, date: attr('data-reset-today-date') };
+  if (ts) out.today = { status: ts, date: BP_DATE(attr('data-reset-today-date')) };
+  // 账本：dateTime 必须在"包含标记的那个 <time> 标签"内（DOM 字段顺序无关）；
+  // 找不到标签（纯 RSC 形态）退化为标记两侧 300 字符内最近的一个——props 字段顺序
+  // 一改就会把相邻元素的 dateTime 误抓进来
   const li = html.indexOf('product-tracking-last-confirmed-reset');
-  out.last_reset_at = li >= 0 ? attr('dateTime', html.slice(li, li + 400)) : null;
-  // 已排期重置卡：targetIso 仅该卡的倒计时组件持有；状态为终态/负态时不算活信号
-  // （已执行由 last_reset_at 账本接住，取消/错过则视同无信号）
-  const sf = attr('targetIso'), si = html.indexOf('product-tracking-scheduled-reset');
-  if (sf && si >= 0) {
-    const seg = html.slice(si, si + 2000);
+  if (li >= 0) {
+    const open = html.lastIndexOf('<time', li), end = open >= 0 ? html.indexOf('>', open) : -1;
+    if (end > li) {
+      out.last_reset_at = BP_ISO(attr('dateTime', html.slice(open, end + 1)));   // 信标签本身，无效即 null
+    } else {
+      const f = html.slice(li, li + 300).match(BP_ATTR('dateTime'));
+      const bSeg = html.slice(Math.max(0, li - 300), li);
+      const b = [...bSeg.matchAll(new RegExp(BP_ATTR('dateTime'), 'g'))].at(-1);
+      const fD = f?.index ?? Infinity, bD = b ? bSeg.length - (b.index + b[0].length) : Infinity;
+      out.last_reset_at = BP_ISO((fD <= bD ? f : b)?.[1]);
+    }
+  } else out.last_reset_at = null;
+  // 已排期重置卡：时刻/状态/链接都取卡片标记之后的第一个（防页面加第二个倒计时组件时
+  // 全局首现被抢占）；状态为终态/负态时不算活信号——已执行由账本接住，取消/错过视同无信号
+  const si = html.indexOf('product-tracking-scheduled-reset');
+  const after = si >= 0 ? html.slice(si) : '';
+  const sf = BP_ISO(attr('targetIso', after)), pa = BP_ISO(attr('publishedAtIso', after));
+  if (si >= 0 && (sf || pa)) {
+    const seg = html.slice(si, si + 8000);
     const status = attr('data-signal-reset-status', seg);
-    if (!/cancel|missed|fail|executed|confirmed|done|landed|expired/i.test(status || '')) {
+    if (!/cancel|missed|fail|executed|confirmed|done|landed|expired|取消|已执行|已完成|已重置|错过|跳票|失效|过期/i.test(status || '')) {
       out.commitment = {
         scheduled_for: sf,
-        posted_at: attr('publishedAtIso'),
+        posted_at: pa,
         url: seg.match(/x\.com\/[A-Za-z0-9_]+\/status\/\d+/)?.[0] ?? null,
         text: 'scheduled reset',
       };
