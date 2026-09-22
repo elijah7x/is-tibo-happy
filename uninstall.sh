@@ -18,13 +18,18 @@ done
 PORT_CLOSED=1
 if [ -n "$APP" ] && pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null; then
   echo "▸ 重启 Codex 以关闭调试端口（对话记录不会丢失）"
-  osascript -e 'quit app "ChatGPT"' 2>/dev/null || true
+  # pkill 而非 osascript：Apple Events 会弹"想要控制 Codex"授权框，信号不需要授权
+  pkill -TERM -f "$APP/Contents/MacOS/ChatGPT" 2>/dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null || break
     sleep 1
   done
   if pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null; then
-    # osascript 被拒/挂起等：别谎报端口已关
+    pkill -KILL -f "$APP/Contents/MacOS/ChatGPT" 2>/dev/null || true
+    sleep 1
+  fi
+  if pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null; then
+    # 仍活着：别谎报端口已关
     PORT_CLOSED=0
     echo "⚠ Codex 未能自动退出——请手动退出一次再打开，调试端口才会关闭"
   else

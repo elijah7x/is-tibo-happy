@@ -59,7 +59,7 @@ fn pid_file() -> PathBuf {
         .join("Library/Application Support/is-tibo-happy/is-tibo-happy.pid")
 }
 
-// execSync 等价物：跑子进程并拿 stdout，超时就杀（osascript 挂起不能冻住主循环）
+// execSync 等价物：跑子进程并拿 stdout，超时就杀（子进程挂起不能冻住主循环）
 fn run_cmd(prog: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
     let mut child = Command::new(prog)
         .args(args)
@@ -353,9 +353,11 @@ impl Daemon {
                 return Ok(false);
             }
             log!("app running without debug port; restarting it once");
+            // 信号而非 osascript：Apple Events 会弹"想要控制 Codex"授权框，
+            // 同 uid 进程的信号不需要任何授权——用户不该看到这条提示
             let _ = run_cmd(
-                "osascript",
-                &["-e", "quit app \"ChatGPT\""],
+                "pkill",
+                &["-TERM", "-f", &self.exe.to_string_lossy()],
                 Duration::from_secs(5),
             );
             for _ in 0..15 {
@@ -363,6 +365,20 @@ impl Daemon {
                     break;
                 }
                 thread::sleep(Duration::from_secs(1));
+            }
+            if app_running(&self.exe) {
+                // TERM 没被理（页面挂起等极端情况）→ KILL 兜底，防新旧实例并存
+                let _ = run_cmd(
+                    "pkill",
+                    &["-KILL", "-f", &self.exe.to_string_lossy()],
+                    Duration::from_secs(5),
+                );
+                for _ in 0..5 {
+                    if !app_running(&self.exe) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_secs(1));
+                }
             }
             return Ok(spawn_app(&self.exe));
         }
