@@ -61,7 +61,7 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 
 ```
 后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 15MB 内存）
-  └─ 每 15 分钟拉一次公开重置数据（打开菜单时也顺手刷新）
+  └─ 每 15 分钟拉一次公开重置数据（菜单事件入队，下轮附着时一并刷新）
   └─ SIGUSR1 → Node inspector → webContents.executeJavaScript
      注入卡片后立即关闭 inspector——不改 App 本体
 ```

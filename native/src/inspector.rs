@@ -6,7 +6,7 @@
 // 比 renderer CDP 权限更高，绝不留常驻监听。
 use crate::cdp::{self, Cdp};
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -15,8 +15,27 @@ use wait_timeout::ChildExt;
 
 pub const PORT: u16 = 9229;
 
-// argv 含宿主可执行文件路径的就是主进程（helper 跑的是 Codex Framework 下的别的二进制）
+// pgrep -f 只给候选集：它匹配 argv 任意位置，无关进程 argv 里提到路径也会命中；
+// 且 argv 可被进程自改（setproctitle 伪装）。发 SIGUSR1 前必须用内核报告的
+// proc_pidpath 验明可执行文件真身——SIGUSR1 对非 Node 进程默认动作是终止。
+extern "C" {
+    fn proc_pidpath(pid: i32, buffer: *mut u8, buffersize: u32) -> i32;
+}
+
+fn pid_exe_path(pid: u32) -> Option<PathBuf> {
+    let mut buf = [0u8; 4096];
+    let n = unsafe { proc_pidpath(pid as i32, buf.as_mut_ptr(), buf.len() as u32) };
+    if n <= 0 {
+        return None;
+    }
+    let raw = &buf[..(n as usize).min(buf.len())];
+    let raw = raw.split(|&b| b == 0).next().unwrap_or(raw);
+    let p = PathBuf::from(String::from_utf8_lossy(raw).into_owned());
+    std::fs::canonicalize(p).ok()
+}
+
 pub fn main_pid(exe: &Path) -> Option<u32> {
+    let want = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     crate::daemon::run_cmd(
         "pgrep",
         &["-f", &exe.to_string_lossy()],
@@ -25,7 +44,7 @@ pub fn main_pid(exe: &Path) -> Option<u32> {
     .ok()?
     .lines()
     .filter_map(|l| l.trim().parse::<u32>().ok())
-    .next()
+    .find(|&pid| pid_exe_path(pid) == Some(want.clone()))
 }
 
 // 静态 gate：Framework 里没有 node 的 StartDebugSignalHandler → 进程没装
@@ -109,14 +128,23 @@ pub fn attach(exe: &Path) -> Result<(Cdp, u32), String> {
     }
 }
 
-// 关 inspector：close() 阻塞到所有连接断开——在当前 eval 里直调会自锁，
-// 先 setTimeout 排后，再断开我们的 ws（main 侧 50ms 后执行 close）
-pub fn detach(conn: &Cdp) {
+// 关 inspector：close() 会强断所有活动连接并等服务器停止——在当前 eval 里直调
+// 会自锁（我们的调用本身占着一条连接），先 setTimeout 排后再断开 ws。
+// 然后有界确认端口真的关了：调用方马上再 attach 会撞上还没执行的 close
+// 定时器被连坐强杀；9229 是 main 进程级入口，关失败必须可见。
+pub fn detach(conn: &Cdp) -> bool {
     let _ = eval_main(
         conn,
         "setTimeout(()=>process.mainModule.require('node:inspector').close(),50)",
     );
     conn.close();
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(80));
+        if cdp::list_targets(PORT).is_err() {
+            return true; // 端口已拒绝连接 = inspector 服务器已关
+        }
+    }
+    false
 }
 
 // 主进程 eval：awaitPromise + returnByValue（executeJavaScript 返回 Promise）
@@ -183,6 +211,8 @@ pub fn restore_expr(avatar: Option<&str>, state: Option<&Value>) -> String {
 // 初始化：注册 App 级重注入钩子 + 更新 restore 存量 + shim + 当前页立即注入。
 // 钩子挂 main 进程 globalThis.__ithInit 幂等——daemon 重启不重复注册；
 // web-contents-created 覆盖窗口重建，did-finish-load 覆盖页面重载。
+// 注意：web-contents-created 触发时 c.getURL() 恒为空（Electron #15040），
+// URL 判定必须放进 did-finish-load 回调里做——无条件挂钩、load 时再过滤。
 pub fn init_page(
     conn: &Cdp,
     widget_src: &str,
@@ -196,29 +226,41 @@ pub fn init_page(
         .map_err(|e| e.to_string())?;
     eval_main(conn, &format!(
         "(()=>{{const e=process.mainModule.require('electron');\
-        if(!globalThis.__ithInit){{\
-        globalThis.__ithInit=1;\
+        if((globalThis.__ithInit||0)<2){{\
+        globalThis.__ithInit=2;\
         const ok=c=>{{const u=c.getURL();return u.startsWith('app://-/index.html')&&!u.includes('initialRoute=')}};\
         const inj=c=>c.executeJavaScript({payload}).then(()=>c.executeJavaScript(globalThis.__ithRestore||'')).catch(()=>{{}});\
-        e.app.on('web-contents-created',(ev,c)=>{{if(ok(c))c.on('did-finish-load',()=>inj(c))}});\
-        e.webContents.getAllWebContents().forEach(c=>{{if(ok(c))c.on('did-finish-load',()=>inj(c))}});\
+        const hook=c=>c.on('did-finish-load',()=>{{if(!c.isDestroyed()&&ok(c))inj(c)}});\
+        e.app.on('web-contents-created',(ev,c)=>hook(c));\
+        e.webContents.getAllWebContents().forEach(hook);\
         }}\
         globalThis.__ithRestore={restore};\
         return 'ok'}})()"
     ))?;
     // 当前页立即注入；页面尚在加载时 executeJavaScript 可能失败——did-finish-load 兜住
-    let _ = eval_page(conn, &format!("{REFRESH_SHIM}\n{widget_src}"));
+    let _ = inject_page(conn, widget_src);
     let _ = eval_page(conn, &restore_expr(avatar, cached_state));
     Ok(())
 }
 
-// 收走页面侧排队的 ithRefresh 事件；返回 [(kind, 时间戳ms)]
-pub fn drain_pending(conn: &Cdp) -> Vec<(String, i64)> {
-    eval_page(conn, "(()=>{const p=window.__ithPendingRefresh||[];window.__ithPendingRefresh=[];return JSON.stringify(p)})()")
+// 页面侧注入（shim+widget 同源载荷）。窗口重建后主窗口还在、widget 没了，
+// push 路径探活发现时用它就地补注，不等下轮 init。
+pub fn inject_page(conn: &Cdp, widget_src: &str) -> Result<Value, String> {
+    eval_page(conn, &format!("{REFRESH_SHIM}\n{widget_src}"))
+}
+
+// 收走页面侧排队的 ithRefresh 事件，顺带探活：widget 的 setState 是函数才算活着。
+// 窗口重建（进程不退、wc 换新）后 __ith 消失——探活并进这个每次必跑的 eval，
+// 否则指纹去重命中时永远不 eval，widget 丢了无人知晓。
+// 返回 (widget_alive, [(kind, 时间戳ms)])
+pub fn drain_pending(conn: &Cdp) -> (bool, Vec<(String, i64)>) {
+    let v = eval_page(conn, "(()=>{const p=window.__ithPendingRefresh||[];window.__ithPendingRefresh=[];return JSON.stringify({a:!!(window.__ith&&window.__ith.setState),p})})()")
         .ok()
         .and_then(|v| v.as_str().map(String::from))
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| v.as_array().cloned())
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let alive = v.as_ref().and_then(|v| v["a"].as_bool()) == Some(true);
+    let events = v
+        .and_then(|v| v["p"].as_array().cloned())
         .unwrap_or_default()
         .iter()
         .map(|e| {
@@ -227,7 +269,8 @@ pub fn drain_pending(conn: &Cdp) -> Vec<(String, i64)> {
                 e["t"].as_i64().unwrap_or(0),
             )
         })
-        .collect()
+        .collect();
+    (alive, events)
 }
 
 #[cfg(test)]

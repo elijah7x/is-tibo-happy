@@ -32,13 +32,19 @@ const EN_DAY: &[&str] = &[
 // JS Date.parse 语义移植：带偏移按偏移、无偏移按宿主本地时区、纯日期按 UTC。
 // RFC3339 之外还兼容手写高频形态——分钟精度（"…T07:00Z"）、±HH:MM 偏移等
 fn parse_iso(s: &str) -> Option<i64> {
-    // V8 空白语义（实测）：datetime 形态对首尾空白零容忍（NaN），纯日期形态容忍。
-    // chrono 的 %Y 对前导空白宽容——不在入口拦掉会把 datetime 空白也放行
+    // V8 空白语义（实测）：datetime 形态对首尾空白零容忍（NaN），纯日期形态容忍——
+    // 但带空白使它落入 legacy 解析按**本地**午夜算（" 2026-09-22 " 在上海 =
+    // 前一天 16:00Z），而非 ISO date-only 的 UTC 午夜。chrono %Y 对前导空白宽容，
+    // 不在入口拦掉会把 datetime 空白也放行
     if s != s.trim() {
         return NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
             .ok()
             .and_then(|d| d.and_hms_opt(0, 0, 0))
-            .map(|n| n.and_utc().timestamp_millis());
+            .and_then(|n| match local_tz().from_local_datetime(&n) {
+                chrono::LocalResult::Single(d) => Some(d.timestamp_millis()),
+                chrono::LocalResult::Ambiguous(a, _) => Some(a.timestamp_millis()),
+                chrono::LocalResult::None => None,
+            });
     }
     if let Ok(d) = DateTime::parse_from_rfc3339(s) {
         return Some(d.timestamp_millis());
@@ -854,14 +860,14 @@ fn sub_line_in(
                     };
                 }
             }
-            if detail.get("confirmed").is_some() {
+            if detail.get("confirmed").is_some_and(truthy) {
                 return if zh {
                     "已预告重置".into()
                 } else {
                     "reset announced".into()
                 };
             }
-            if detail.get("teaseTier").is_some() {
+            if detail.get("teaseTier").is_some_and(truthy) {
                 return if zh {
                     "有重置暗示".into()
                 } else {

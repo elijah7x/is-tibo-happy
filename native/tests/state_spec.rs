@@ -1243,9 +1243,33 @@ fn cache_replay_falsy_signal_fields_recompute_kind() {
 // 🟡-2 回归：V8 对带首尾空白的时间戳直接拒收——trim 曾造出 JS 没有的宽容面
 #[test]
 fn iso_whitespace_semantics_match_v8() {
-    // V8 实测：datetime 形态空白→NaN；date-only 形态空白→照解析（两侧 trim）
+    // V8 实测：datetime 形态空白→NaN；date-only 形态空白→照解析但落 legacy
+    // 路径按**本地**午夜（≠ ISO date-only 的 UTC 午夜）——等价于 "T00:00" naive
     assert!(parse_iso_pub(" 2026-09-22T07:00Z").is_none());
     assert!(parse_iso_pub("2026-09-22T07:00Z ").is_none());
-    assert_eq!(parse_iso_pub(" 2026-09-22"), parse_iso_pub("2026-09-22"));
-    assert_eq!(parse_iso_pub("2026-09-22 "), parse_iso_pub("2026-09-22"));
+    assert_eq!(
+        parse_iso_pub(" 2026-09-22"),
+        parse_iso_pub("2026-09-22T00:00")
+    );
+    assert_eq!(
+        parse_iso_pub("2026-09-22 "),
+        parse_iso_pub("2026-09-22T00:00")
+    );
+}
+
+// 🟡-5 回归：sub_line 的 confirmed/teaseTier 也须 truthy——升级前的旧缓存可能
+// 写过 confirmed:false / teaseTier:""，is_some 会把 falsy 误当信号，文案方向整个反掉
+#[test]
+fn sub_line_falsy_signal_fields_fall_through() {
+    for falsy in [json!(false), json!(""), json!(0), Value::Null] {
+        let s = json!({
+            "kind": "happy",
+            "detail": {"confirmed": falsy, "teaseTier": falsy, "daysSince": 2.0}
+        });
+        assert_eq!(
+            sub_line(&s, NOW_MS, None)["zh"],
+            "上次重置 2 天前",
+            "falsy {falsy} leaked"
+        );
+    }
 }

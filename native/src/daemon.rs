@@ -37,7 +37,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 macro_rules! log {
-    ($($a:tt)*) => { println!("[is-tibo-happy] {}", format!($($a)*)) };
+    ($($a:tt)*) => { println!("[is-tibo-happy {}] {}", chrono::Local::now().format("%H:%M:%S"), format!($($a)*)) };
 }
 
 // 推送日志截断：按字符数取（对齐 JS slice 语义）——按字节切会在多字节 UTF-8 边界 panic
@@ -217,6 +217,8 @@ struct Daemon {
     hooked_pid: AtomicU32, // 已完成 init_page 的宿主主进程 pid
     insp_lock: Mutex<()>,  // 串行化 attach/detach——inspector.close 会误杀并存的另一会话
     app_seen_at: Mutex<Option<Instant>>, // 首次观察到 App 在跑的时刻——识别"启动中"的 attach 竞态
+    init_fails: AtomicU32,               // init_page 连续失败数——驱动退避（不算 attach 三振）
+    next_init_at: Mutex<Option<Instant>>, // init 退避：此刻前不再试 init，防永久失败无限 flap
     last_pushed: Mutex<String>,
     last_fetch_at: Mutex<i64>,
     last_fetch_ok: AtomicBool,
@@ -287,9 +289,9 @@ impl Daemon {
         }
     }
 
-    // 取态→指纹去重→经 eval 闭包推上屏；返回 Err 供调用方识别"主窗口没了"这类可恢复失败
-    fn push_via(&self, eval: impl Fn(&str) -> Result<Value, String>) -> Result<(), String> {
-        let s = self.fetch_state();
+    // 指纹去重→经 eval 闭包推上屏；返回 Err 供调用方识别"主窗口没了"这类可恢复失败。
+    // 状态由调用方预先取好——fetch 最坏 ~58s 网络等待，不该开着 inspector 端口做
+    fn push_via(&self, s: &Value, eval: impl Fn(&str) -> Result<Value, String>) -> Result<(), String> {
         // 内容指纹：只有用户可见信息变化才重推
         let d = &s["detail"];
         let key = json!({
@@ -303,7 +305,7 @@ impl Daemon {
         }
         let via = d.get("via").and_then(|v| v.as_str()).unwrap_or("-");
         let brief = brief120(d);
-        let payload = format!("window.__ith && window.__ith.setState({})", s);
+        let payload = format!("window.__ith && window.__ith.setState({})", s); // 探活由 drain 的 a 位负责
         match eval(&payload) {
             // 推送成功后才记指纹——失败/中断不吞状态，下一轮重试同一状态
             Ok(_) => {
@@ -324,33 +326,21 @@ impl Daemon {
 
     fn push_inner(&self) {
         if self.inspector_ok.load(Ordering::Relaxed) && self.prefer_inspector() {
-            // inspector 通道：无常驻连接——attach→收事件→eval→detach，attach 失败本轮跳过
+            // inspector 通道：无常驻连接——attach→会话→detach。
+            // attach 失败不能静默吞（钩子已挂时状态会永久停滞）：记日志+清 hooked，
+            // 引回主循环里被三振计数/启动宽限约束的 init 路径
+            // 取数在会话外做（同 inspector_init 的理由）
+            let s = self.fetch_state();
             let _g = self.insp_lock.lock().unwrap();
-            if let Ok((conn, _)) = inspector::attach(&self.exe) {
-                for (k, _) in inspector::drain_pending(&conn) {
-                    if let Some(label) = k.strip_prefix("menu-unmatched:") {
-                        log!("widget: menu-unmatched:{label}");
-                    } else {
-                        log!("refresh via menu (queued)");
+            match inspector::attach(&self.exe) {
+                Ok((conn, _)) => {
+                    self.inspector_session(&conn, true, &s);
+                    if !inspector::detach(&conn) {
+                        log!("inspector close unconfirmed — 9229 may still be open");
                     }
                 }
-                let r = self.push_via(|e| inspector::eval_page(&conn, e));
-                if r.is_ok() {
-                    // 同步 restore 存量：页面重载后钩子回放最新态，不裸奔到下轮推送
-                    let av = crate::avatar_json();
-                    let cache = self.cache.lock().unwrap().clone();
-                    let restore = inspector::restore_expr(av.as_deref(), cache.get("state"));
-                    let _ = inspector::eval_main(
-                        &conn,
-                        &format!(
-                            "globalThis.__ithRestore={}",
-                            serde_json::to_string(&restore).unwrap_or_default()
-                        ),
-                    );
-                }
-                inspector::detach(&conn);
-                // 主窗口被重建（wc 换新）→ 清 hooked 标记，主循环下轮重挂
-                if r.as_ref().err().is_some_and(|e| e.contains("no main window")) {
+                Err(e) => {
+                    log!("inspector attach (push): {e}");
                     self.hooked_pid.store(0, Ordering::Relaxed);
                 }
             }
@@ -359,7 +349,8 @@ impl Daemon {
         if self.active.lock().unwrap().is_none() {
             return; // 断开期间不抓远端
         }
-        let _ = self.push_via(|e| self.eval(e));
+        let s = self.fetch_state();
+        let _ = self.push_via(&s, |e| self.eval(e));
     }
 
     // 端口没在才走 inspector（ITH_FORCE_INSPECT 可强制优先，dev 验证用）
@@ -367,9 +358,77 @@ impl Daemon {
         std::env::var_os("ITH_FORCE_INSPECT").is_some() || !port_up()
     }
 
-    // inspector 通道初始化：SIGUSR1 附加 → 注册重注入钩子+注入 → detach。
-    // 返回 false = attach 失败（累计后降级端口模式）；init 失败多半是 App 启动中，
-    // 算可恢复不算 attach 失败。
+    // inspector 会话内的完整一轮：drain（收事件+探活）→ 必要时就地补注 →
+    // 推态 → 同步 restore 存量。s 是会话外预先取好的展示态。
+    // reinit_on_missing=true 用于推送路径：补注也挂=页面不可写，清 hooked 交回
+    // 主循环 init（计退避）；init 刚注过则 false——页面在加载属正常，load 钩子兜住。
+    fn inspector_session(&self, conn: &Cdp, reinit_on_missing: bool, s: &Value) {
+        let (alive, events) = inspector::drain_pending(conn);
+        for (k, _) in events {
+            if let Some(label) = k.strip_prefix("menu-unmatched:") {
+                log!("widget: menu-unmatched:{label}");
+            } else {
+                log!("refresh via menu (queued)");
+            }
+        }
+        if !alive {
+            if inspector::inject_page(conn, crate::WIDGET_SRC).is_ok() {
+                log!("widget missing (window rebuilt) — re-injected");
+            } else {
+                log!("widget missing, re-inject failed — {}", if reinit_on_missing {
+                    "re-init later"
+                } else {
+                    "load hook will cover"
+                });
+                if reinit_on_missing {
+                    self.hooked_pid.store(0, Ordering::Relaxed);
+                    self.note_init_fail();
+                }
+                return; // 页面无 widget 时 setState 静默 no-op，推了也是吞状态
+            }
+        }
+        let r = self.push_via(s, |e| inspector::eval_page(conn, e));
+        // 同步 restore 存量：页面重载后钩子回放最新展示态，不裸奔到下轮推送。
+        // 不绑推送成败——restore 存的是"最新已知态"，页面死了也照常写
+        let av = crate::avatar_json();
+        let restore = inspector::restore_expr(av.as_deref(), Some(s));
+        let _ = inspector::eval_main(
+            conn,
+            &format!(
+                "globalThis.__ithRestore={}",
+                serde_json::to_string(&restore).unwrap_or_default()
+            ),
+        );
+        // 主窗口被重建（wc 换新）→ 清 hooked 标记，主循环下轮重挂
+        if r.as_ref().err().is_some_and(|e| e.contains("no main window")) {
+            self.hooked_pid.store(0, Ordering::Relaxed);
+        }
+    }
+
+    // init_page 失败退避：不算 attach 三振（连接本身好着，是页面侧没就绪/改版），
+    // 但永久失败也不能每轮 SIGUSR1 开 inspector——30s 起翻倍封顶 5min。
+    fn init_backoff(&self) -> bool {
+        self.next_init_at
+            .lock()
+            .unwrap()
+            .is_some_and(|t| Instant::now() < t)
+    }
+
+    fn note_init_ok(&self) {
+        self.init_fails.store(0, Ordering::Relaxed);
+        *self.next_init_at.lock().unwrap() = None;
+    }
+
+    fn note_init_fail(&self) {
+        let n = self.init_fails.fetch_add(1, Ordering::Relaxed) + 1;
+        let secs = [30u64, 60, 120, 300][(n.saturating_sub(1)).min(3) as usize];
+        log!("inspector init backing off {secs}s (x{n})");
+        *self.next_init_at.lock().unwrap() = Some(Instant::now() + Duration::from_secs(secs));
+    }
+
+    // inspector 通道初始化：SIGUSR1 附加 → 注册重注入钩子+注入 → 同连接收事件+
+    // 首轮推送 → detach。返回 false = attach 失败（累计后降级端口模式）；
+    // init 失败多半是 App 启动中或页面不可写，计退避不算 attach 失败。
     fn inspector_init(&self) -> bool {
         let Some(pid) = inspector::main_pid(&self.exe) else {
             return true; // 主进程不在是上层竞态，不算失败
@@ -377,11 +436,23 @@ impl Daemon {
         if self.hooked_pid.load(Ordering::Relaxed) == pid {
             return true;
         }
+        // 网络取数在 inspector 会话外做：fetch 最坏 ~58s 超时预算，
+        // 不该开着 9229（main 进程级入口）等网络
+        let s = self.fetch_state();
         {
             let _g = self.insp_lock.lock().unwrap();
             let (conn, pid) = match inspector::attach(&self.exe) {
                 Ok(v) => v,
                 Err(e) => {
+                    // attach 失败一律歇 30s：fetch 已先行，不歇就每 5s 白取一轮
+                    *self.next_init_at.lock().unwrap() =
+                        Some(Instant::now() + Duration::from_secs(30));
+                    // 9229 被无关 inspector 占用：不是宿主能力问题——不记三振，
+                    // 降级路径会为一个蹲坑的进程重启用户 App，太亏
+                    if e.contains("owner mismatch") {
+                        log!("inspector attach deferred (foreign inspector): {e}");
+                        return true;
+                    }
                     // 同 pid 且刚起 = 启动中竞态，不记 strike；
                     // pid 没了/换了 = 可能是信号把它杀了（无 handler 的最坏情形）
                     // ——记 strike 触发降级止损，别拿 SIGUSR1 反复戳它
@@ -399,34 +470,42 @@ impl Daemon {
                 }
             };
             let av = crate::avatar_json();
-            let cache = self.cache.lock().unwrap().clone();
             let r = inspector::init_page(
                 &conn,
                 crate::WIDGET_SRC,
                 av.as_deref(),
-                cache.get("state"),
+                Some(&s),
             );
-            for (k, _) in inspector::drain_pending(&conn) {
-                if let Some(label) = k.strip_prefix("menu-unmatched:") {
-                    log!("widget: menu-unmatched:{label}");
-                }
-            }
-            inspector::detach(&conn);
             match r {
                 Ok(()) => {
                     self.hooked_pid.store(pid, Ordering::Relaxed);
                     // 首装授权到此兑现——不消费的话用户每次关 Codex 都会被重新拉起
                     let _ = std::fs::remove_file(&self.first_flag);
+                    self.note_init_ok();
+                    *self.last_pushed.lock().unwrap() = String::new();
+                    log!("inspector attached pid {pid} — widget live, zero restart");
+                    // detach→再 attach 会撞上宿主侧 50ms inspector.close() 定时器被
+                    // 强杀（真机首推命中率仅 40%）——首轮推送在同一连接内完成；
+                    // catch_unwind 同 push()：panic 不得把 pushing 卡在 true
+                    if !self.pushing.swap(true, Ordering::SeqCst) {
+                        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            self.inspector_session(&conn, false, &s)
+                        }));
+                        self.pushing.store(false, Ordering::SeqCst);
+                        if r.is_err() {
+                            log!("inspector session panicked");
+                        }
+                    }
                 }
                 Err(e) => {
+                    self.note_init_fail();
                     log!("inspector init deferred: {e}");
-                    return true;
                 }
             }
+            if !inspector::detach(&conn) {
+                log!("inspector close unconfirmed — 9229 may still be open");
+            }
         }
-        *self.last_pushed.lock().unwrap() = String::new();
-        log!("inspector attached pid {pid} — widget live, zero restart");
-        self.push();
         true
     }
 
@@ -703,6 +782,8 @@ pub fn run(args: &[String]) -> i32 {
         hooked_pid: AtomicU32::new(0),
         insp_lock: Mutex::new(()),
         app_seen_at: Mutex::new(None),
+        init_fails: AtomicU32::new(0),
+        next_init_at: Mutex::new(None),
         last_pushed: Mutex::new(String::new()),
         last_fetch_at: Mutex::new(0),
         last_fetch_ok: AtomicBool::new(false),
@@ -738,6 +819,12 @@ pub fn run(args: &[String]) -> i32 {
             d.hooked_pid.store(0, Ordering::Relaxed);
             *d.app_seen_at.lock().unwrap() = None;
             attach_fails = 0; // 缺席期间旧的 attach 失败一并作废
+            d.note_init_ok(); // 同理：新进程可能换了版本，init 退避从头算
+            // 进程换代可能换了宿主版本——重新评估 inspector 能力（supported 按
+            // Framework mtime 缓存，没变体不重扫），降级过也能自愈回来
+            if std::env::var_os("ITH_NO_INSPECT").is_none() {
+                d.inspector_ok.store(inspector::supported(&app), Ordering::Relaxed);
+            }
             // App 缺席：仅"安装后首跑"（标记文件）或 --launch 授权才拉起；
             // 之后用户退出就只等不拉（缺席拉起 = 退出后它自己又弹回来，太打扰）
             let may_launch = force_launch || d.first_flag.exists();
@@ -759,7 +846,10 @@ pub fn run(args: &[String]) -> i32 {
         }
         // 端口没在且 inspector 可用 → SIGUSR1 附加通道，绝不重启进程
         if d.prefer_inspector() && d.inspector_ok.load(Ordering::Relaxed) {
-            if d.inspector_init() {
+            // 退避期跳过 init 但不清 attach_fails——否则退避会把三振计数静默洗掉
+            if d.init_backoff() {
+                // fallthrough：不 init，直接走 wait/once 收尾
+            } else if d.inspector_init() {
                 attach_fails = 0;
             } else {
                 attach_fails += 1;
@@ -853,6 +943,8 @@ pub fn probe(args: &[String]) -> i32 {
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or(Value::Null);
+            // --reload 会污染 __ithRestore——先备份（init_page 自身也会写它）
+            let _ = inspector::eval_main(&conn, "globalThis.__ithRestoreBak=globalThis.__ithRestore||null");
             match inspector::init_page(&conn, crate::WIDGET_SRC, av.as_deref(), cache.get("state")) {
                 Ok(()) => println!("init_page ok"),
                 Err(e) => println!("init_page: {e}"),
@@ -865,7 +957,8 @@ pub fn probe(args: &[String]) -> i32 {
                 Ok(v) => println!("widget: {}", v.as_str().unwrap_or("?")),
                 Err(e) => println!("widget check failed: {e}"),
             }
-            let pending = inspector::drain_pending(&conn);
+            let (alive, pending) = inspector::drain_pending(&conn);
+            println!("widget alive: {alive}");
             for (k, t) in &pending {
                 println!("pending event: k={k:?} t={t}");
             }
@@ -884,6 +977,10 @@ pub fn probe(args: &[String]) -> i32 {
                     Ok(v) => println!("after reload: {}", v.as_str().unwrap_or("?")),
                     Err(e) => println!("after reload check failed: {e}"),
                 }
+                // 还原 restore 存量，并把页面上的探针假文案也用真实态盖掉
+                let _ = inspector::eval_main(&conn, "globalThis.__ithRestore=globalThis.__ithRestoreBak;delete globalThis.__ithRestoreBak");
+                let restore = inspector::restore_expr(av.as_deref(), cache.get("state"));
+                let _ = inspector::eval_page(&conn, &restore);
             }
             inspector::detach(&conn);
             0
