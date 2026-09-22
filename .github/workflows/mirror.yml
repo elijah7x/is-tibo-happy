@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
       - name: build fetch-state（同一实现，防双状态机漂移）
-        run: cargo build --release --manifest-path native/Cargo.toml
+        run: cargo build --locked --release --manifest-path native/Cargo.toml
       - run: ./native/target/release/is-tibo-happy fetch-state
       - name: commit state.json
         run: |

@@ -69,14 +69,22 @@ fn fetch_state(args: &[String]) -> i32 {
             (net::SOURCE_DIRECT, true),
             (net::SOURCE_BACKUP, true),
         ] {
-            let r = if relay { get_json_relayed(url) } else { get_json(url) };
+            let r = if relay {
+                get_json_relayed(url)
+            } else {
+                get_json(url)
+            };
             match r {
                 Ok(j) => {
                     src = url.to_string();
                     upstream = Some(j);
                     break;
                 }
-                Err(e) => eprintln!("{}{} failed: {e}", if relay { "relay " } else { "" }, url.split('/').nth(2).unwrap_or(url)),
+                Err(e) => eprintln!(
+                    "{}{} failed: {e}",
+                    if relay { "relay " } else { "" },
+                    url.split('/').nth(2).unwrap_or(url)
+                ),
             }
         }
     }
@@ -94,7 +102,10 @@ fn fetch_state(args: &[String]) -> i32 {
     }
     match std::fs::write(&out, serde_json::to_string_pretty(&env).unwrap() + "\n") {
         Ok(()) => {
-            println!("state.json updated via {src}: {}", upstream["updated_at"].as_str().unwrap_or("no updated_at"));
+            println!(
+                "state.json updated via {src}: {}",
+                upstream["updated_at"].as_str().unwrap_or("no updated_at")
+            );
             0
         }
         Err(e) => {
@@ -115,24 +126,44 @@ fn main() {
             // 新二进制上线前冒烟：能跑、内嵌资源完好即可
             let ok = serde_json::from_str::<Value>(is_tibo_happy::AVATAR_SRC).is_ok()
                 && is_tibo_happy::WIDGET_SRC.contains("__ith");
-            println!("is-tibo-happy {} selftest {}", env!("CARGO_PKG_VERSION"), if ok { "ok" } else { "FAIL" });
-            if ok { 0 } else { 1 }
-        }
-        Some("fetch-state") => fetch_state(&args),
-        Some("update") => match update::check_and_swap("is-tibo-happy/0.2 (manual update)") {
-            Ok(Some(v)) => {
-                println!("updated to {v} — restart the daemon to run it");
+            println!(
+                "is-tibo-happy {} selftest {}",
+                env!("CARGO_PKG_VERSION"),
+                if ok { "ok" } else { "FAIL" }
+            );
+            if ok {
                 0
-            }
-            Ok(None) => {
-                println!("already up to date ({})", env!("CARGO_PKG_VERSION"));
-                0
-            }
-            Err(e) => {
-                eprintln!("update failed: {e}");
+            } else {
                 1
             }
-        },
+        }
+        Some("fetch-state") => fetch_state(&args),
+        Some("update") => {
+            // 手动更新同样过安装门禁——repo/target 里的 dev 二进制不能被自我替换
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .unwrap_or_default();
+            if !update::installed(exe_dir) {
+                eprintln!("update: only the installed daemon (~/Library/Application Support/is-tibo-happy) self-updates");
+                1
+            } else {
+                match update::check_and_swap("is-tibo-happy/0.2 (manual update)") {
+                    Ok(Some(v)) => {
+                        println!("updated to {v} — restart the daemon to run it");
+                        0
+                    }
+                    Ok(None) => {
+                        println!("already up to date ({})", env!("CARGO_PKG_VERSION"));
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("update failed: {e}");
+                        1
+                    }
+                }
+            }
+        }
         _ => daemon::run(&args),
     };
     std::process::exit(code);

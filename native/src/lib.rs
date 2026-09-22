@@ -12,7 +12,9 @@ pub const WIDGET_SRC: &str = include_str!("../../src/widget.js");
 pub const AVATAR_SRC: &str = include_str!("../../assets/avatar/avatar.json");
 
 pub fn avatar_json() -> Option<String> {
-    serde_json::from_str::<Value>(AVATAR_SRC).ok().map(|v| v.to_string())
+    serde_json::from_str::<Value>(AVATAR_SRC)
+        .ok()
+        .map(|v| v.to_string())
 }
 
 pub fn now_ms() -> i64 {

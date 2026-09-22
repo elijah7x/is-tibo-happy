@@ -18,7 +18,8 @@ pub fn list_targets(port: u16) -> Result<Vec<Value>, String> {
         .timeout(Duration::from_secs(3))
         .call()
         .map_err(|e| format!("/json -> {e}"))?;
-    r.into_json::<Vec<Value>>().map_err(|e| format!("/json parse: {e}"))
+    r.into_json::<Vec<Value>>()
+        .map_err(|e| format!("/json parse: {e}"))
 }
 
 pub fn get_version(port: u16) -> Result<Value, String> {
@@ -26,7 +27,8 @@ pub fn get_version(port: u16) -> Result<Value, String> {
         .timeout(Duration::from_secs(3))
         .call()
         .map_err(|e| format!("/json/version -> {e}"))?;
-    r.into_json::<Value>().map_err(|e| format!("/json/version parse: {e}"))
+    r.into_json::<Value>()
+        .map_err(|e| format!("/json/version parse: {e}"))
 }
 
 pub enum CdpEvent {
@@ -54,12 +56,17 @@ impl Cdp {
             .map_err(|e| format!("ws addr: {e}"))?
             .next()
             .ok_or("ws addr: empty")?;
-        let stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| format!("ws connect: {e}"))?;
+        let stream =
+            TcpStream::connect_timeout(&addr, timeout).map_err(|e| format!("ws connect: {e}"))?;
         stream.set_read_timeout(Some(timeout)).ok();
-        let req = ws_url.parse::<tungstenite::http::Uri>().map_err(|e| format!("ws uri: {e}"))?;
+        let req = ws_url
+            .parse::<tungstenite::http::Uri>()
+            .map_err(|e| format!("ws uri: {e}"))?;
         let (mut ws, _) = client(req, stream).map_err(|e| format!("ws handshake: {e}"))?;
         // 握手完成后降到 500ms 轮询读，好让出站帧插进来
-        ws.get_ref().set_read_timeout(Some(Duration::from_millis(500))).ok();
+        ws.get_ref()
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .ok();
 
         let pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Result<Value, String>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -96,7 +103,10 @@ impl Cdp {
                         Ok(Message::Close(_)) => break,
                         Ok(_) => {}
                         Err(tungstenite::Error::Io(e))
-                            if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
+                            if matches!(
+                                e.kind(),
+                                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                            ) => {}
                         Err(_) => break,
                     }
                     while let Ok(frame) = out_rx.try_recv() {
@@ -116,7 +126,13 @@ impl Cdp {
             });
         }
 
-        Ok(Cdp { outbound: out_tx, pending, events: Mutex::new(ev_rx), next_id: AtomicU64::new(0), closed })
+        Ok(Cdp {
+            outbound: out_tx,
+            pending,
+            events: Mutex::new(ev_rx),
+            next_id: AtomicU64::new(0),
+            closed,
+        })
     }
 
     pub fn send(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
@@ -168,5 +184,8 @@ pub fn eval_js(conn: &Cdp, expression: &str) -> Result<Value, String> {
             .unwrap_or("");
         return Err(format!("page exception: {} {}", e["text"], desc));
     }
-    Ok(r.get("result").and_then(|r| r.get("value")).cloned().unwrap_or(Value::Null))
+    Ok(r.get("result")
+        .and_then(|r| r.get("value"))
+        .cloned()
+        .unwrap_or(Value::Null))
 }

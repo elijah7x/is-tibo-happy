@@ -11,15 +11,6 @@ DEST="$HOME/Library/Application Support/$NAME"
 PLIST="$HOME/Library/LaunchAgents/com.istibohappy.daemon.plist"
 REL="https://github.com/$REPO/releases/latest/download"
 
-dl() {  # dl <repo相对路径> <本地路径>：仓库文件逐源尝试
-  local rel="$1" out="$2" b
-  for b in "https://raw.githubusercontent.com/$REPO/$REF" "https://cdn.jsdelivr.net/gh/$REPO@$REF"; do
-    curl -fsSL --connect-timeout 8 --max-time 60 "$b/$rel" -o "$out" 2>/dev/null && return 0
-  done
-  echo "下载失败: $rel（所有源都不可达，检查网络后重试）" >&2
-  exit 1
-}
-
 [ "$(uname)" = "Darwin" ] || { echo "仅支持 macOS"; exit 1; }
 APP=""
 for p in "/Applications/ChatGPT.app" "$HOME/Applications/ChatGPT.app"; do
@@ -27,7 +18,7 @@ for p in "/Applications/ChatGPT.app" "$HOME/Applications/ChatGPT.app"; do
 done
 [ -n "$APP" ] || { echo "未找到 ChatGPT.app（Codex 桌面版宿主，/Applications 或 ~/Applications）"; exit 1; }
 
-echo "▸ 下载二进制 → $DEST（universal2，sha256 校验后自检）"
+echo "▸ 下载二进制 → ${DEST}（universal2，sha256 校验后自检）"
 mkdir -p "$DEST"
 curl -fsSL --connect-timeout 8 --max-time 300 "$REL/$NAME" -o "$DEST/$NAME" \
   || { echo "二进制下载失败（GitHub Releases 不可达——境内网络可先开代理再重试）"; exit 1; }

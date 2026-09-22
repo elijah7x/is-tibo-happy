@@ -12,7 +12,9 @@ fn cdp_live_target_and_eval() {
         .find(|t| {
             t.get("type").and_then(|x| x.as_str()) == Some("page")
                 && t.get("url").and_then(|u| u.as_str()).map_or(false, |u| {
-                    u.starts_with("app://") && u.contains("-/index.html") && !u.contains("initialRoute")
+                    u.starts_with("app://")
+                        && u.contains("-/index.html")
+                        && !u.contains("initialRoute")
                 })
         })
         .expect("app target not found");
@@ -20,7 +22,10 @@ fn cdp_live_target_and_eval() {
     let c = Cdp::connect(ws, Duration::from_secs(8)).unwrap();
 
     let href = eval_js(&c, "location.href").unwrap();
-    assert!(href.as_str().unwrap_or("").starts_with("app://"), "unexpected href: {href}");
+    assert!(
+        href.as_str().unwrap_or("").starts_with("app://"),
+        "unexpected href: {href}"
+    );
 
     // widget 注入路径：写状态 + eval widget 源码 → __ith 必须为真
     eval_js(&c, "window.__ith_state = window.__ith_state || { mood: 'HAPPY', mainLine: 'cdp test', subLine: '', offline: false };").unwrap();

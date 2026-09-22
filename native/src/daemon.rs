@@ -13,6 +13,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -20,17 +21,29 @@ use wait_timeout::ChildExt;
 
 const PORT: u16 = cdp::PORT;
 const UA: &str = "is-tibo-happy/0.2 (+https://github.com/elijah7x/is-tibo-happy)"; // 自报家门：让源站能认出、限流、联系我们
-const POLL: Duration = Duration::from_secs(15 * 60);  // 上游数据轮询
-const RECONNECT: Duration = Duration::from_secs(3);   // CDP 断开后重试间隔
-const APP_POLL: Duration = Duration::from_secs(30);   // App 不在时的等待轮询
-const RELAUNCH_CAP: usize = 3;                        // 每小时最多重启 App 次数（防打架循环）
+const POLL: Duration = Duration::from_secs(15 * 60); // 上游数据轮询
+const RECONNECT: Duration = Duration::from_secs(3); // CDP 断开后重试间隔
+const APP_POLL: Duration = Duration::from_secs(30); // App 不在时的等待轮询
+const RELAUNCH_CAP: usize = 3; // 每小时最多重启 App 次数（防打架循环）
 const RELAUNCH_WINDOW: Duration = Duration::from_secs(3600);
 
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 macro_rules! log {
     ($($a:tt)*) => { println!("[is-tibo-happy] {}", format!($($a)*)) };
+}
+
+// 推送日志截断：按字符数取（对齐 JS slice 语义）——按字节切会在多字节 UTF-8 边界 panic
+fn brief120(d: &Value) -> String {
+    serde_json::to_string(d)
+        .unwrap_or_default()
+        .chars()
+        .take(120)
+        .collect()
 }
 
 fn exe_dir() -> PathBuf {
@@ -72,11 +85,16 @@ fn run_cmd(prog: &str, args: &[&str], timeout: Duration) -> Result<String, Strin
 
 fn find_app() -> Option<PathBuf> {
     // 宿主可能装在 /Applications 或用户级 ~/Applications
-    ["/Applications/ChatGPT.app".to_string(),
-     format!("{}/Applications/ChatGPT.app", std::env::var("HOME").unwrap_or_default())]
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists())
+    [
+        "/Applications/ChatGPT.app".to_string(),
+        format!(
+            "{}/Applications/ChatGPT.app",
+            std::env::var("HOME").unwrap_or_default()
+        ),
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .find(|p| p.exists())
 }
 fn app_exe(app: &Path) -> PathBuf {
     app.join("Contents/MacOS/ChatGPT")
@@ -89,10 +107,17 @@ fn acquire_lock() {
     }
     if let Ok(s) = std::fs::read_to_string(&pidfile) {
         if let Ok(pid) = s.trim().parse::<u32>() {
-            // pid 可能被无关进程复用 → 校验进程身份确实是本守护进程
-            let ours = run_cmd("ps", &["-p", &pid.to_string(), "-o", "args="], Duration::from_secs(5))
-                .map(|o| o.contains("is-tibo-happy"))
-                .unwrap_or(false);
+            // pid 可能被无关进程复用 → 只比可执行名（comm= 不含 args，
+            // 防止 `cat …/is-tibo-happy/x` 这类无关进程被误认领成守护实例）
+            let ours = run_cmd(
+                "ps",
+                &["-p", &pid.to_string(), "-o", "comm="],
+                Duration::from_secs(5),
+            )
+            .map(|o| {
+                Path::new(o.trim()).file_name().and_then(|f| f.to_str()) == Some("is-tibo-happy")
+            })
+            .unwrap_or(false);
             if ours {
                 eprintln!("[is-tibo-happy] already running (pid {pid})");
                 std::process::exit(1);
@@ -100,14 +125,7 @@ fn acquire_lock() {
         }
     }
     let _ = std::fs::write(&pidfile, std::process::id().to_string());
-    // 退出时清锁（atexit 语义）：用一个全局路径静态量注册
-    struct Guard(PathBuf);
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-    Box::leak(Box::new(Guard(pidfile))); // 进程退出时由 Drop 清理（Rust 无 atexit，泄漏到进程末尾即可）
+    // pidfile 退出时不清（进程可随时被硬杀）：上面的 comm= 身份校验兜底残留文件的正确性
 }
 
 fn port_up() -> bool {
@@ -115,9 +133,13 @@ fn port_up() -> bool {
 }
 
 fn app_running(exe: &Path) -> bool {
-    run_cmd("pgrep", &["-f", &exe.to_string_lossy()], Duration::from_secs(5))
-        .map(|o| !o.trim().is_empty())
-        .unwrap_or(false)
+    run_cmd(
+        "pgrep",
+        &["-f", &exe.to_string_lossy()],
+        Duration::from_secs(5),
+    )
+    .map(|o| !o.trim().is_empty())
+    .unwrap_or(false)
 }
 
 fn spawn_app(exe: &Path) -> bool {
@@ -145,7 +167,8 @@ struct RelaunchCap {
 impl RelaunchCap {
     fn allowed(&mut self) -> bool {
         let now = Instant::now();
-        self.times.retain(|t| now.duration_since(*t) < RELAUNCH_WINDOW);
+        self.times
+            .retain(|t| now.duration_since(*t) < RELAUNCH_WINDOW);
         if self.times.len() < RELAUNCH_CAP {
             self.logged = false;
         }
@@ -176,7 +199,7 @@ struct Daemon {
     last_fetch_at: Mutex<i64>,
     last_fetch_ok: AtomicBool,
     last_err: Mutex<String>,
-    cache: Mutex<Value>,     // {state, at} 或 Null
+    cache: Mutex<Value>, // {state, at} 或 Null
     cache_file: PathBuf,
     first_flag: PathBuf,
     tz: Option<String>,
@@ -206,7 +229,12 @@ impl Daemon {
         }
         let (state, cache) = {
             let c = self.cache.lock().unwrap();
-            resolve_display(fresh.as_ref(), if c.is_null() { None } else { Some(&c) }, now_ms(), self.tz.as_deref())
+            resolve_display(
+                fresh.as_ref(),
+                if c.is_null() { None } else { Some(&c) },
+                now_ms(),
+                self.tz.as_deref(),
+            )
         };
         if cache != *self.cache.lock().unwrap() {
             *self.cache.lock().unwrap() = cache.clone();
@@ -250,19 +278,23 @@ impl Daemon {
             "s": d["scheduledISO"], "w": d["windowEnd"], "t": d["targetStart"],
         })
         .to_string();
-        {
-            let mut lp = self.last_pushed.lock().unwrap();
-            if *lp == key {
-                return;
-            }
-            *lp = key;
+        if *self.last_pushed.lock().unwrap() == key {
+            return;
         }
         let via = d.get("via").and_then(|v| v.as_str()).unwrap_or("-");
-        let brief = serde_json::to_string(d).unwrap_or_default();
-        log!("state: {} via={via} {}", s["kind"].as_str().unwrap_or("?"), &brief[..brief.len().min(120)]);
+        let brief = brief120(d);
         let payload = format!("window.__ith && window.__ith.setState({})", s);
-        if let Err(e) = self.eval(&payload) {
-            log!("setState failed: {e}");
+        match self.eval(&payload) {
+            // 推送成功后才记指纹——失败/中断不吞状态，下一轮重试同一状态
+            Ok(_) => {
+                *self.last_pushed.lock().unwrap() = key;
+                log!(
+                    "state: {} via={via} {}",
+                    s["kind"].as_str().unwrap_or("?"),
+                    brief
+                );
+            }
+            Err(e) => log!("setState failed: {e}"),
         }
     }
 
@@ -276,7 +308,10 @@ impl Daemon {
         // 缓存态先上屏，不等首轮 fetch（网络慢时菜单不至于空白）
         let cache = self.cache.lock().unwrap().clone();
         if let Some(state) = cache.get("state") {
-            let _ = cdp::eval_js(cdp_conn, &format!("window.__ith && window.__ith.setState({state})"));
+            let _ = cdp::eval_js(
+                cdp_conn,
+                &format!("window.__ith && window.__ith.setState({state})"),
+            );
         }
         *self.last_pushed.lock().unwrap() = String::new(); // 换页/重连后强制重推一次
         self.push();
@@ -289,8 +324,12 @@ impl Daemon {
             if let Ok(list) = cdp::list_targets(PORT) {
                 if let Some(t) = list.into_iter().find(|x| {
                     x["type"].as_str() == Some("page")
-                        && x["url"].as_str().is_some_and(|u| u.starts_with("app://-/index.html"))
-                        && !x["url"].as_str().is_some_and(|u| u.contains("initialRoute="))
+                        && x["url"]
+                            .as_str()
+                            .is_some_and(|u| u.starts_with("app://-/index.html"))
+                        && !x["url"]
+                            .as_str()
+                            .is_some_and(|u| u.contains("initialRoute="))
                 }) {
                     return Ok(t);
                 }
@@ -314,7 +353,11 @@ impl Daemon {
                 return Ok(false);
             }
             log!("app running without debug port; restarting it once");
-            let _ = run_cmd("osascript", &["-e", "quit app \"ChatGPT\""], Duration::from_secs(5));
+            let _ = run_cmd(
+                "osascript",
+                &["-e", "quit app \"ChatGPT\""],
+                Duration::from_secs(5),
+            );
             for _ in 0..15 {
                 if !app_running(&self.exe) {
                     break;
@@ -339,7 +382,11 @@ impl Daemon {
         conn.send("Runtime.enable", json!({}), Duration::from_secs(10))?;
         conn.send("Page.enable", json!({}), Duration::from_secs(10))?;
         // widget 每次成功挂卡 → window.ithRefresh('') → 这里收到通知后节流刷新
-        conn.send("Runtime.addBinding", json!({"name": "ithRefresh"}), Duration::from_secs(10))?;
+        conn.send(
+            "Runtime.addBinding",
+            json!({"name": "ithRefresh"}),
+            Duration::from_secs(10),
+        )?;
         self.inject(&conn)?;
 
         if self.once {
@@ -347,43 +394,54 @@ impl Daemon {
             let _ = cdp::eval_js(&conn, "window.__ith && window.__ith.destroy()");
             return Ok(());
         }
+        let mut last_in = Instant::now(); // 最近入站帧时刻——TCP 半开假活探测用
         loop {
             match conn.recv_event(Duration::from_secs(1)) {
-                Ok(CdpEvent::Message { method, params }) => match method.as_str() {
-                    "Runtime.bindingCalled" => {
-                        if params["name"].as_str() != Some("ithRefresh") {
-                            continue;
+                Ok(CdpEvent::Message { method, params }) => {
+                    last_in = Instant::now();
+                    match method.as_str() {
+                        "Runtime.bindingCalled" => {
+                            if params["name"].as_str() != Some("ithRefresh") {
+                                continue;
+                            }
+                            let payload = params["payload"].as_str().unwrap_or("");
+                            if let Some(label) = payload.strip_prefix("menu-unmatched:") {
+                                log!("widget: menu-unmatched:{label}");
+                                continue;
+                            }
+                            if now_ms() - *self.last_fetch_at.lock().unwrap() < 5 * 60 * 1000 {
+                                continue; // 5min 节流
+                            }
+                            log!("refresh via menu");
+                            self.push();
                         }
-                        let payload = params["payload"].as_str().unwrap_or("");
-                        if let Some(label) = payload.strip_prefix("menu-unmatched:") {
-                            log!("widget: menu-unmatched:{label}");
-                            continue;
-                        }
-                        if now_ms() - *self.last_fetch_at.lock().unwrap() < 5 * 60 * 1000 {
-                            continue; // 5min 节流
-                        }
-                        log!("refresh via menu");
-                        self.push();
-                    }
-                    "Page.frameNavigated" => {
-                        if params["frame"]["parentId"].is_null() {
-                            self.injected.store(false, Ordering::Relaxed);
-                            log!("navigated, re-injecting");
-                            if let Err(e) = self.inject(&conn) {
-                                log!("re-inject failed: {e}");
+                        "Page.frameNavigated" => {
+                            if params["frame"]["parentId"].is_null() {
+                                self.injected.store(false, Ordering::Relaxed);
+                                log!("navigated, re-injecting");
+                                if let Err(e) = self.inject(&conn) {
+                                    log!("re-inject failed: {e}");
+                                }
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
-                },
+                }
                 Ok(CdpEvent::Closed) => break,
-                Err(mpsc_timeout) => {
-                    let _ = mpsc_timeout;
+                Err(mpsc::RecvTimeoutError::Disconnected) => break, // ws 读线程死了 → 断开会话重连
+                Err(mpsc::RecvTimeoutError::Timeout) => {
                     if self.stopping.load(Ordering::Relaxed) {
                         // 优雅退出：摘掉 widget 再断
                         let _ = cdp::eval_js(&conn, "window.__ith && window.__ith.destroy()");
                         conn.close();
                         std::process::exit(0);
+                    }
+                    // TCP 半开假活：90s 无入站帧 → 主动 ping 探活，死了就断开会话交回主循环重连
+                    if last_in.elapsed() > Duration::from_secs(90) {
+                        match conn.send("Browser.getVersion", json!({}), Duration::from_secs(10)) {
+                            Ok(_) => last_in = Instant::now(),
+                            Err(_) => return Err("cdp keepalive timeout".into()),
+                        }
                     }
                 }
             }
@@ -448,12 +506,16 @@ pub fn run(args: &[String]) -> i32 {
     let once = args.iter().any(|a| a == "--once");
     let no_quit = args.iter().any(|a| a == "--no-quit");
     let force_launch = args.iter().any(|a| a == "--launch");
-    let no_update = args.iter().any(|a| a == "--no-update") || std::env::var_os("ITH_NO_UPDATE").is_some();
+    let no_update =
+        args.iter().any(|a| a == "--no-update") || std::env::var_os("ITH_NO_UPDATE").is_some();
 
     let dir = exe_dir();
     let logfile = dir.join("daemon.log");
     // 日志防膨胀：>1MB 截断重开
-    if std::fs::metadata(&logfile).map(|m| m.len() > 1024 * 1024).unwrap_or(false) {
+    if std::fs::metadata(&logfile)
+        .map(|m| m.len() > 1024 * 1024)
+        .unwrap_or(false)
+    {
         let _ = std::fs::File::create(&logfile);
     }
     let Some(app) = find_app() else {
@@ -484,7 +546,10 @@ pub fn run(args: &[String]) -> i32 {
         no_update,
         once,
         stopping: stopping.clone(),
-        cap: Mutex::new(RelaunchCap { times: Vec::new(), logged: false }),
+        cap: Mutex::new(RelaunchCap {
+            times: Vec::new(),
+            logged: false,
+        }),
         active: Arc::new(Mutex::new(None)),
         injected: AtomicBool::new(false),
         pushing: AtomicBool::new(false),
@@ -533,8 +598,12 @@ pub fn run(args: &[String]) -> i32 {
             Err(e) => {
                 session_fails += 1;
                 // 连续建不起会话（端口被占/宿主改版/注入失败）→ 指数退避，3s 起封顶 15min
-                let delay = (RECONNECT * 2u32.saturating_pow(session_fails - 1)).min(Duration::from_secs(15 * 60));
-                log!("session failed (x{session_fails}): {e} — retry in {}s", delay.as_secs());
+                let delay = (RECONNECT * 2u32.saturating_pow(session_fails - 1))
+                    .min(Duration::from_secs(15 * 60));
+                log!(
+                    "session failed (x{session_fails}): {e} — retry in {}s",
+                    delay.as_secs()
+                );
                 if once || stopping.load(Ordering::Relaxed) {
                     break;
                 }
@@ -548,4 +617,20 @@ pub fn run(args: &[String]) -> i32 {
         thread::sleep(RECONNECT);
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 🔴-2 回归：详情序列化后按字节切，byte 120 落进 CJK 字符内部必 panic
+    #[test]
+    fn brief_truncation_is_char_boundary_safe() {
+        // 构造 byte 120 恰在 "中" 字符内部："{\"sub\":{\"zh\":\"" 占 13B，
+        // 其后每 "中" 3B——(120-13)%3=2 → 命中字符内部（老代码在此必 panic）
+        let d = json!({"sub": {"zh": "中".repeat(150), "en": "reset soon"}});
+        let b = brief120(&d);
+        assert_eq!(b.chars().count(), 120);
+        assert!(serde_json::to_string(&d).unwrap().len() > 120);
+    }
 }

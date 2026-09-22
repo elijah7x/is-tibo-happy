@@ -19,7 +19,7 @@ iana-time-zone = "0.1"
 regex = "1"
 sha2 = "0.10"                   # 热更新校验下载产物
 semver = "1"
-ctrlc = "3"                     # SIGINT/SIGTERM → 优雅退出（先摘 widget）
+ctrlc = { version = "3", features = ["termination"] } # SIGINT/SIGTERM → 优雅退出（先摘 widget）；termination feature 才装 SIGTERM
 wait-timeout = "0.2"            # execSync 带超时等价物（ps/pgrep/osascript 5s 上限）
 
 [profile.release]

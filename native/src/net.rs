@@ -77,7 +77,11 @@ pub fn mirror_fresh(env: &Value, now: i64) -> bool {
             .is_some_and(|f| now - f < MIRROR_MAX_AGE_MS)
 }
 
-pub fn fetch_forecast_from(srcs: &Sources, ua: &str, now: i64) -> Result<(Value, &'static str), String> {
+pub fn fetch_forecast_from(
+    srcs: &Sources,
+    ua: &str,
+    now: i64,
+) -> Result<(Value, &'static str), String> {
     let mut errors: Vec<String> = Vec::new();
     match get_text(&srcs.primary, ua, Duration::from_secs(12)) {
         Ok(html) => match parse_betteropc(&html) {

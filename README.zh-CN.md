@@ -60,7 +60,7 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 ## 它怎么工作
 
 ```
-后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 10MB 内存）
+后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 15MB 内存）
   └─ 每 15 分钟拉一次公开重置数据（打开菜单时也顺手刷新）
   └─ 通过 CDP 往账号菜单注入一张卡片——不改 App 本体
 ```

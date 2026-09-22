@@ -62,7 +62,7 @@ If local-process isolation matters to you, don't install.
 ## How it works
 
 ```
-LaunchAgent daemon (idle ≈ 0% CPU, ~10 MB)
+LaunchAgent daemon (idle ≈ 0% CPU, ~15 MB)
   └─ fetches public reset data every 15 min (and on menu open)
   └─ injects one card into the profile menu via CDP — app files untouched
 ```

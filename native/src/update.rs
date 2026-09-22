@@ -10,12 +10,12 @@ const LATEST_API: &str = "https://api.github.com/repos/elijah7x/is-tibo-happy/re
 const ASSET_BIN: &str = "is-tibo-happy";
 const ASSET_SUMS: &str = "SHA256SUMS";
 
-// 只有"已安装实例"才允许自动更新：exe 必须住在安装目录里，
-// repo/target 下的 dev 构建永远不自我替换
+// 只有"已安装实例"才允许自动更新：exe 必须正好住在安装目录里（精确等值比较——
+// 子串匹配会把 `…/is-tibo-happy-dev` 这类兄弟目录误判成安装实例）
 pub fn installed(exe_dir: PathBuf) -> bool {
-    exe_dir
-        .to_string_lossy()
-        .contains("Library/Application Support/is-tibo-happy")
+    let want = PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Library/Application Support/is-tibo-happy");
+    exe_dir == want
 }
 
 fn download(url: &str, ua: &str, timeout: Duration) -> Result<Vec<u8>, String> {
@@ -68,7 +68,8 @@ pub fn check_and_swap(ua: &str) -> Result<Option<String>, String> {
         .into_json::<Value>()
         .map_err(|e| format!("release json: {e}"))?;
     let tag = rel["tag_name"].as_str().ok_or("release: no tag_name")?;
-    let remote = semver::Version::parse(tag.trim_start_matches('v')).map_err(|_| format!("bad tag {tag}"))?;
+    let remote = semver::Version::parse(tag.trim_start_matches('v'))
+        .map_err(|_| format!("bad tag {tag}"))?;
     let current = semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| e.to_string())?;
     if remote <= current {
         return Ok(None);
@@ -87,10 +88,15 @@ pub fn check_and_swap(ua: &str) -> Result<Option<String>, String> {
     let bin_url = asset_url(ASSET_BIN)?;
     let sums_url = asset_url(ASSET_SUMS)?;
     let bin = download(&bin_url, ua, Duration::from_secs(120))?;
-    let sums = String::from_utf8_lossy(&download(&sums_url, ua, Duration::from_secs(15))?).to_string();
+    let sums =
+        String::from_utf8_lossy(&download(&sums_url, ua, Duration::from_secs(15))?).to_string();
     let want = sums
         .lines()
-        .find_map(|l| l.split_whitespace().next().filter(|_| l.ends_with(ASSET_BIN)))
+        .find_map(|l| {
+            l.split_whitespace()
+                .next()
+                .filter(|_| l.ends_with(ASSET_BIN))
+        })
         .ok_or("SHA256SUMS lacks binary entry")?;
     let got = format!("{:x}", Sha256::digest(&bin));
     if got != want {

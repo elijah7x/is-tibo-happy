@@ -19,23 +19,86 @@ pub const DAY: i64 = 86400_000;
 pub const HOUR: i64 = 3600_000;
 
 const CN_DAY: &[char] = &['日', '一', '二', '三', '四', '五', '六'];
-const EN_DAY: &[&str] = &["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const EN_DAY: &[&str] = &[
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
 
-// 上游时间一律按 UTC 绝对时刻解析（JS Date.parse 对无 Z 后缀按本地时区，这里更严：
-// 无偏移量也按 UTC——上游只会给 ISO/Z 格式，严格解析顺便挡垃圾输入）
+// JS Date.parse 语义移植：带偏移按偏移、无偏移按宿主本地时区、纯日期按 UTC。
+// RFC3339 之外还兼容手写高频形态——分钟精度（"…T07:00Z"）、±HH:MM 偏移等
 fn parse_iso(s: &str) -> Option<i64> {
+    let s = s.trim();
     if let Ok(d) = DateTime::parse_from_rfc3339(s) {
         return Some(d.timestamp_millis());
     }
-    for fmt in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S"] {
-        if let Ok(n) = NaiveDateTime::parse_from_str(s, fmt) {
+    // 分钟精度 + Z（RFC3339 要求秒，手写时刻常省）
+    if let Some(core) = s.strip_suffix('Z') {
+        if let Ok(n) = NaiveDateTime::parse_from_str(core, "%Y-%m-%dT%H:%M") {
             return Some(n.and_utc().timestamp_millis());
         }
     }
+    // 显式偏移 ±HH:MM / ±HHMM（可省秒）：剥离后按 UTC 换算
+    if let Some((body, off_ms)) = split_offset(s) {
+        for fmt in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M"] {
+            if let Ok(n) = NaiveDateTime::parse_from_str(body, fmt) {
+                return Some(n.and_utc().timestamp_millis() - off_ms);
+            }
+        }
+    }
+    // 无偏移 → 宿主本地时区（对齐 Date.parse 的 naive→local 语义）
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+    ] {
+        if let Ok(n) = NaiveDateTime::parse_from_str(s, fmt) {
+            return match local_tz().from_local_datetime(&n) {
+                chrono::LocalResult::Single(d) => Some(d.timestamp_millis()),
+                chrono::LocalResult::Ambiguous(a, _) => Some(a.timestamp_millis()),
+                chrono::LocalResult::None => None,
+            };
+        }
+    }
+    // 纯日期：JS 规范里 date-only 按 UTC 零点（与 naive datetime 的 local 语义不同）
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return d.and_hms_opt(0, 0, 0).map(|n| n.and_utc().timestamp_millis());
+        return d
+            .and_hms_opt(0, 0, 0)
+            .map(|n| n.and_utc().timestamp_millis());
     }
     None
+}
+
+// "…±HH:MM" / "…±HHMM"：剥离显式偏移，返回 (主体, 偏移毫秒)。
+// rfind +/- 且位置 >9：跳过日期部分自带的 '-'（"2026-09-22" 的 '-' 在 4/7 位）
+fn split_offset(s: &str) -> Option<(&str, i64)> {
+    let i = s.rfind(['+', '-']).filter(|&i| i > 9 && i + 1 < s.len())?;
+    let off = &s[i + 1..];
+    let (h, m) = match off.split_once(':') {
+        Some((h, m)) => (h, m),
+        None if off.len() == 4 => off.split_at(2), // ±HHMM 无冒号形态
+        None => (off, "0"),
+    };
+    let h: i64 = h.parse().ok().filter(|x| (0..=14).contains(x))?;
+    let m: i64 = m.parse().ok().filter(|x| *x < 60)?;
+    let sign = if s.as_bytes()[i] == b'-' { -1 } else { 1 };
+    Some((&s[..i], sign * (h * 3600 + m * 60) * 1000))
+}
+
+// 宿主本地时区（对齐 JS Date.parse 的 naive 解析口径）；探测失败退 UTC
+fn local_tz() -> Tz {
+    static TZ: LazyLock<Tz> = LazyLock::new(|| {
+        iana_time_zone::get_timezone()
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(chrono_tz::UTC)
+    });
+    *TZ
 }
 
 // JS Date.parse(v)：只接受字符串值，其余（数字/对象/null）→ None
@@ -61,6 +124,57 @@ fn get<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
     v.as_object().and_then(|o| o.get(k))
 }
 
+// JS `a || b` 的 falsy 语义移植：null / "" / false / 0 都会让位给下一个候选键。
+// Rust 的 or_else 只看 Some/None——显式 null 会堵住回退链，必须先过滤
+fn truthy(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Value::String(s) => !s.is_empty(),
+        _ => true,
+    }
+}
+fn get_t<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
+    get(v, k).filter(|x| truthy(x))
+}
+
+// JS slice(from, from+n) 的字符语义移植：窗口按字符数取（不是字节）。
+// Rust 按字节切多字节 UTF-8 边界会 panic；nth(chars) 的 end 天然落边界
+fn floor_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+fn ceil_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+fn window_fwd(s: &str, from: usize, chars: usize) -> &str {
+    let a = floor_boundary(s, from);
+    let b = s[a..]
+        .char_indices()
+        .nth(chars)
+        .map(|(i, _)| a + i)
+        .unwrap_or(s.len());
+    &s[a..b]
+}
+fn window_back(s: &str, to: usize, chars: usize) -> &str {
+    let b = ceil_boundary(s, to);
+    let a = s[..b]
+        .char_indices()
+        .rev()
+        .nth(chars.saturating_sub(1))
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    &s[a..b]
+}
+
 // ── 预告原文 → 目标日 ──
 #[derive(Clone, Copy)]
 enum DayKey {
@@ -70,10 +184,12 @@ enum DayKey {
     Dow(u32), // 0=周日
 }
 
-static RE_TODAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\btoday|tonight|end of day|eod\b").unwrap());
+static RE_TODAY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\btoday|tonight|end of day|eod\b").unwrap());
 static RE_TOMORROW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\btomorrow\b").unwrap());
-static RE_WEEKDAY: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b").unwrap());
+static RE_WEEKDAY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b").unwrap()
+});
 static RE_WEEKEND: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bweekend\b").unwrap());
 
 fn parse_day_key(text: &Value) -> Option<DayKey> {
@@ -88,7 +204,10 @@ fn parse_day_key(text: &Value) -> Option<DayKey> {
         return Some(DayKey::Tomorrow);
     }
     if let Some(m) = RE_WEEKDAY.captures(&t) {
-        let dow = EN_DAY.iter().position(|d| d.to_lowercase() == m[1]).unwrap() as u32;
+        let dow = EN_DAY
+            .iter()
+            .position(|d| d.to_lowercase() == m[1])
+            .unwrap() as u32;
         return Some(DayKey::Dow(dow));
     }
     if RE_WEEKEND.is_match(&t) {
@@ -97,8 +216,10 @@ fn parse_day_key(text: &Value) -> Option<DayKey> {
     None
 }
 
-fn valid_hour(v: Option<&Value>) -> Option<i64> {
-    v.and_then(|v| v.as_f64()).filter(|h| *h >= 0.0 && *h <= 23.0).map(|h| h as i64)
+fn valid_hour(v: Option<&Value>) -> Option<f64> {
+    // 不截断：JS 里 2.5 算 02:30，截成整点会漂移半小时
+    v.and_then(|v| v.as_f64())
+        .filter(|h| *h >= 0.0 && *h <= 23.0)
 }
 
 fn utc_midnight(ms: i64) -> i64 {
@@ -129,7 +250,10 @@ fn local_ymd_w(ms: i64, tz: Option<&str>) -> Option<(String, u32)> {
     };
     let zone: Tz = name.parse().ok()?;
     let dt = Utc.timestamp_millis_opt(ms).single()?.with_timezone(&zone);
-    Some((dt.format("%Y-%m-%d").to_string(), dt.weekday().num_days_from_sunday()))
+    Some((
+        dt.format("%Y-%m-%d").to_string(),
+        dt.weekday().num_days_from_sunday(),
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -140,17 +264,24 @@ struct Target {
 
 // "coming in Tuesday" → 具体 UTC 窗口：推文发布日（Tibo 时区 PT 口径）起第一个周二，
 // 套上惯常重置时段（默认 23:00→次日 02:00 UTC，源站 time_window 字段可覆盖）
-fn resolve_target(text: &Value, post_at_ms: Option<i64>, time_window: Option<&Value>, now: i64) -> Option<Target> {
+fn resolve_target(
+    text: &Value,
+    post_at_ms: Option<i64>,
+    time_window: Option<&Value>,
+    now: i64,
+) -> Option<Target> {
     let dk = parse_day_key(text)?;
-    let sh = valid_hour(time_window.and_then(|w| get(w, "start_hour"))).unwrap_or(23);
-    let eh = valid_hour(time_window.and_then(|w| get(w, "end_hour"))).unwrap_or(2);
+    let sh = valid_hour(time_window.and_then(|w| get(w, "start_hour"))).unwrap_or(23.0);
+    let eh = valid_hour(time_window.and_then(|w| get(w, "end_hour"))).unwrap_or(2.0);
     // 基准日 = 发布时刻在 America/Los_Angeles 的本地日期（PT 傍晚≠UTC 同日），DST-safe
     let base = local_ymd_w(post_at_ms.unwrap_or(now), Some("America/Los_Angeles"))
         .and_then(|(ymd, _)| {
             let y: i32 = ymd[0..4].parse().ok()?;
             let m: u32 = ymd[5..7].parse().ok()?;
             let d: u32 = ymd[8..10].parse().ok()?;
-            Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).single().map(|t| t.timestamp_millis())
+            Utc.with_ymd_and_hms(y, m, d, 0, 0, 0)
+                .single()
+                .map(|t| t.timestamp_millis())
         })
         .unwrap_or_else(|| utc_midnight(now));
     let (mut start_day, end_day);
@@ -178,15 +309,21 @@ fn resolve_target(text: &Value, post_at_ms: Option<i64>, time_window: Option<&Va
             end_day = start_day;
         }
     }
-    let start = start_day + sh * HOUR;
-    let mut end = end_day + eh * HOUR;
+    let start = start_day + (sh * HOUR as f64) as i64;
+    let mut end = end_day + (eh * HOUR as f64) as i64;
     if end <= start {
         end += DAY; // 跨午夜窗口（23→2）落到次日
     }
     Some(Target { start, end })
 }
 
-fn set_target(detail: &mut Map<String, Value>, text: &Value, post_at: Option<i64>, tw: Option<&Value>, now: i64) {
+fn set_target(
+    detail: &mut Map<String, Value>,
+    text: &Value,
+    post_at: Option<i64>,
+    tw: Option<&Value>,
+    now: i64,
+) {
     if let Some(t) = resolve_target(text, post_at, tw, now) {
         detail.insert("targetStart".into(), json!(iso(t.start)));
         detail.insert("targetEnd".into(), json!(iso(t.end)));
@@ -195,13 +332,17 @@ fn set_target(detail: &mut Map<String, Value>, text: &Value, post_at: Option<i64
 
 // 目标窗口结束 + 迟到宽限内仍算活信号（预告极少跳票，只会早来或迟到）
 fn still_fresh(t: &Option<Target>, now: i64) -> bool {
-    t.as_ref().map(|t| now < t.end + LATE_GRACE).unwrap_or(false)
+    t.as_ref()
+        .map(|t| now < t.end + LATE_GRACE)
+        .unwrap_or(false)
 }
 
 // 窗口字段合法性：两端都可解析且 end > start 才采纳
 fn set_window(detail: &mut Map<String, Value>, win: Option<&Value>) {
-    let (Some(s), Some(e)) = (get(win.unwrap_or(&Value::Null), "start"), get(win.unwrap_or(&Value::Null), "end"))
-    else {
+    let (Some(s), Some(e)) = (
+        get(win.unwrap_or(&Value::Null), "start"),
+        get(win.unwrap_or(&Value::Null), "end"),
+    ) else {
         return;
     };
     let (Some(sm), Some(em)) = (parse_ms(Some(s)), parse_ms(Some(e))) else {
@@ -214,7 +355,12 @@ fn set_window(detail: &mut Map<String, Value>, win: Option<&Value>) {
 }
 
 fn str_field(v: Option<&Value>, keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|k| get(v.unwrap_or(&Value::Null), k).and_then(|x| x.as_str()).map(String::from))
+    keys.iter().find_map(|k| {
+        get(v.unwrap_or(&Value::Null), k)
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty()) // JS || 语义："" falsy 会逃到下一个候选键
+            .map(String::from)
+    })
 }
 
 pub fn derive_forecast(api: &Value, now: i64) -> Value {
@@ -226,7 +372,7 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
     let fulfilled = |at: Option<i64>| matches!(at, Some(a) if last.is_some_and(|l| a < l));
 
     // 1) 明确承诺：有预告不管多远都 HAPPY（倒计时 6 天也是 HAPPY）
-    let commit = get(api, "commitment").or_else(|| get(api, "official_signal"));
+    let commit = get_t(api, "commitment").or_else(|| get_t(api, "official_signal"));
     if let Some(commit) = commit {
         let mut d = Map::new();
         d.insert("confirmed".into(), json!(true));
@@ -239,8 +385,15 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
         if let Some(s) = str_field(Some(commit), &["url", "tweet_url"]) {
             d.insert("tweetUrl".into(), json!(s));
         }
-        set_window(&mut d, get(api, "teased_window").or_else(|| get(commit, "window")));
-        let post_at = parse_ms(get(commit, "posted_at").or_else(|| get(commit, "announced_at")).or_else(|| get(commit, "at")));
+        set_window(
+            &mut d,
+            get_t(api, "teased_window").or_else(|| get_t(commit, "window")),
+        );
+        let post_at = parse_ms(
+            get_t(commit, "posted_at")
+                .or_else(|| get_t(commit, "announced_at"))
+                .or_else(|| get_t(commit, "at")),
+        );
         if post_at.is_some() {
             let txt = d.get("teaseText").cloned().unwrap_or(Value::Null);
             set_target(&mut d, &txt, post_at, get(api, "time_window"), now);
@@ -259,13 +412,18 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
     }
 
     // 2) 暗示级信号：上游 expires_at 失效、72h 新鲜度、目标窗口+迟到宽限，任一存活即算数
-    let tease = get(api, "tease_signal");
+    let tease = get_t(api, "tease_signal");
     let post = tease.and_then(|t| get(t, "post")).filter(|p| p.is_object());
     let tease_post_at = parse_ms(post.and_then(|p| get(p, "at")));
     if let (Some(t), Some(p), Some(tp)) = (tease, post, tease_post_at) {
         if now - tp < SIG_MAX_AGE && !fulfilled(Some(tp)) {
             let tease_exp = parse_ms(get(t, "expires_at"));
-            let tt = resolve_target(get(p, "quote").unwrap_or(&Value::Null), Some(tp), get(api, "time_window"), now);
+            let tt = resolve_target(
+                get(p, "quote").unwrap_or(&Value::Null),
+                Some(tp),
+                get(api, "time_window"),
+                now,
+            );
             if tease_exp.is_some_and(|e| e > now) || now - tp < 72 * HOUR || still_fresh(&tt, now) {
                 let mut d = Map::new();
                 if let Some(s) = get(p, "quote").and_then(|q| q.as_str()) {
@@ -277,7 +435,7 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
                 if let Some(s) = get(t, "tier").and_then(|x| x.as_str()) {
                     d.insert("teaseTier".into(), json!(s));
                 }
-                set_window(&mut d, get(api, "teased_window"));
+                set_window(&mut d, get_t(api, "teased_window"));
                 if let Some(tt) = tt {
                     d.insert("targetStart".into(), json!(iso(tt.start)));
                     d.insert("targetEnd".into(), json!(iso(tt.end)));
@@ -293,7 +451,12 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
     let hint_at = parse_ms(hint.and_then(|h| get(h, "at")));
     if let (Some(h), Some(ha)) = (hint, hint_at) {
         if now - ha < SIG_MAX_AGE && !fulfilled(Some(ha)) {
-            let ht = resolve_target(get(h, "quote").unwrap_or(&Value::Null), Some(ha), get(api, "time_window"), now);
+            let ht = resolve_target(
+                get(h, "quote").unwrap_or(&Value::Null),
+                Some(ha),
+                get(api, "time_window"),
+                now,
+            );
             if let (true, Some(ht)) = (still_fresh(&ht, now), ht) {
                 let mut d = Map::new();
                 if let Some(s) = get(h, "quote").and_then(|q| q.as_str()) {
@@ -312,7 +475,7 @@ pub fn derive_forecast(api: &Value, now: i64) -> Value {
 
     // 2c) 独立窗口预告：无承诺无暗示但窗口合法且未过迟到宽限，仍算信号
     {
-        let win = get(api, "teased_window");
+        let win = get_t(api, "teased_window");
         let ws = parse_ms(win.and_then(|w| get(w, "start")));
         let we = parse_ms(win.and_then(|w| get(w, "end")));
         if let (Some(s), Some(e)) = (ws, we) {
@@ -359,7 +522,9 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
         if let Some(t) = parse_ms(get(e, "announced_at")) {
             if last.is_none_or(|l| t >= l) {
                 last = Some(t);
-                last_type = get(e, "reset_type").and_then(|r| r.as_str()).map(String::from);
+                last_type = get(e, "reset_type")
+                    .and_then(|r| r.as_str())
+                    .map(String::from);
             }
         }
     }
@@ -374,7 +539,10 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
                 if sf + LATE_GRACE > now && !fulfilled(ann.or(Some(sf))) {
                     let mut d = Map::new();
                     d.insert("confirmed".into(), json!(true));
-                    d.insert("scheduledISO".into(), get(s, "scheduled_for").cloned().unwrap_or(Value::Null));
+                    d.insert(
+                        "scheduledISO".into(),
+                        get(s, "scheduled_for").cloned().unwrap_or(Value::Null),
+                    );
                     if let Some(t) = str_field(Some(s), &["display_text", "text"]) {
                         d.insert("teaseText".into(), json!(t));
                     }
@@ -388,15 +556,19 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
                 }
             } else {
                 // 只有文本预告：48h 内宣布或目标窗口未过迟到宽限才算活信号
-                let txt = str_field(Some(s), &["display_text", "text"]).map(Value::String).unwrap_or(Value::Null);
+                let txt = str_field(Some(s), &["display_text", "text"])
+                    .map(Value::String)
+                    .unwrap_or(Value::Null);
                 let ann = parse_ms(get(s, "announced_at"));
-                let tt = ann.and_then(|a| resolve_target(&txt, Some(a), get(api, "time_window"), now));
+                let tt =
+                    ann.and_then(|a| resolve_target(&txt, Some(a), get(api, "time_window"), now));
                 if let (Some(tt), Some(a)) = (tt, ann) {
-                    if (now - a <= 48 * HOUR || still_fresh(&Some(tt), now)) && !fulfilled(Some(a)) {
+                    if (now - a <= 48 * HOUR || still_fresh(&Some(tt), now)) && !fulfilled(Some(a))
+                    {
                         return json!({"kind": "happy", "detail": {
                             "teaseText": txt,
                             "teaseTier": "T1",
-                            "tweetUrl": get(s, "tweet_url").cloned().unwrap_or(Value::Null),
+                            "tweetUrl": str_field(Some(s), &["tweet_url"]).map(Value::String).unwrap_or(Value::Null),
                             "targetStart": iso(tt.start),
                             "targetEnd": iso(tt.end),
                         }});
@@ -462,16 +634,21 @@ fn bp_attr(name: &str) -> Regex {
 }
 
 fn bp_attr_get<'a>(name: &str, seg: &'a str) -> Option<&'a str> {
-    bp_attr(name).captures(seg).and_then(|c| c.get(1)).map(|m| m.as_str())
+    bp_attr(name)
+        .captures(seg)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
 }
 
 // 时间字段必须长得像 ISO 时刻，否则按缺失处理——捕获到标记文本/":"/相邻值都算无效
-static BP_ISO_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}").unwrap());
+static BP_ISO_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}").unwrap());
 static BP_DATE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
 static BP_STATUS_BAD: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)cancel|missed|fail|executed|confirmed|done|landed|expired|取消|已执行|已完成|已重置|错过|跳票|失效|过期").unwrap()
 });
-static BP_X_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"x\.com/[A-Za-z0-9_]+/status/\d+").unwrap());
+static BP_X_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"x\.com/[A-Za-z0-9_]+/status/\d+").unwrap());
 
 fn bp_iso(v: Option<&str>) -> Option<String> {
     v.filter(|s| BP_ISO_RE.is_match(s)).map(String::from)
@@ -491,7 +668,8 @@ pub fn parse_betteropc(html: &str) -> Option<Value> {
     }
     let mut out = json!({"source": "betteropc", "updated_at": bp_iso(bp_attr_get("data-product-updated-at", html))});
     if let Some(ts) = bp_attr_get("data-reset-today-status", html) {
-        out["today"] = json!({"status": ts, "date": bp_date(bp_attr_get("data-reset-today-date", html))});
+        out["today"] =
+            json!({"status": ts, "date": bp_date(bp_attr_get("data-reset-today-date", html))});
     }
     // 账本：dateTime 必须在"包含标记的那个 <time> 标签"内（DOM 字段顺序无关）；
     // 找不到标签（纯 RSC 形态）退化为标记两侧 300 字符内最近的一个——props 字段顺序
@@ -501,23 +679,29 @@ pub fn parse_betteropc(html: &str) -> Option<Value> {
         let open = html[..li].rfind("<time");
         let end = open.and_then(|o| html[o..].find('>').map(|e| o + e));
         if matches!((open, end), (Some(_), Some(e)) if e > li) {
-            last_reset_at = bp_iso(bp_attr_get("dateTime", &html[open.unwrap()..end.unwrap() + 1]));
+            last_reset_at = bp_iso(bp_attr_get(
+                "dateTime",
+                &html[open.unwrap()..end.unwrap() + 1],
+            ));
         } else {
-            // 标记后首个 vs 标记前末个，取更近者
-            let fwd = bp_attr("dateTime").find(&html[li..li + 300.min(html.len() - li)]);
-            let bseg_end = li;
-            let bseg_start = li.saturating_sub(300);
-            let bseg = &html[bseg_start..bseg_end];
+            // 标记后首个 vs 标记前末个，取更近者。窗口按字符数取（对齐 JS slice）——
+            // 按字节切会在多字节边界 panic（审计 🔴-3：真实页此处安全余量仅 32 字节）
+            let fseg = window_fwd(html, li, 300);
+            let bseg = window_back(html, li, 300);
+            let fwd = bp_attr("dateTime").find(fseg);
             let bwd = bp_attr("dateTime").find_iter(bseg).last();
             let f_d = fwd.map(|m| m.start()).unwrap_or(usize::MAX);
             let b_d = bwd.map(|m| bseg.len() - m.end()).unwrap_or(usize::MAX);
             let pick = if f_d <= b_d {
-                fwd.map(|m| &html[li..][m.start()..m.end()])
+                fwd.map(|m| &fseg[m.start()..m.end()])
             } else {
                 bwd.map(|m| &bseg[m.start()..m.end()])
             };
             if let Some(m) = pick {
-                let cap = bp_attr("dateTime").captures(m).and_then(|c| c.get(1)).map(|g| g.as_str());
+                let cap = bp_attr("dateTime")
+                    .captures(m)
+                    .and_then(|c| c.get(1))
+                    .map(|g| g.as_str());
                 last_reset_at = bp_iso(cap);
             }
         }
@@ -530,7 +714,7 @@ pub fn parse_betteropc(html: &str) -> Option<Value> {
         let sf = bp_iso(bp_attr_get("targetIso", after));
         let pa = bp_iso(bp_attr_get("publishedAtIso", after));
         if sf.is_some() || pa.is_some() {
-            let seg = &html[si..(si + 8000).min(html.len())];
+            let seg = window_fwd(html, si, 8000); // 同上：字符窗口，不 panic
             let status = bp_attr_get("data-signal-reset-status", seg);
             if !status.is_some_and(|s| BP_STATUS_BAD.is_match(s)) {
                 let url = BP_X_URL
@@ -555,7 +739,13 @@ pub fn parse_betteropc(html: &str) -> Option<Value> {
 
 // ── 副行文案（双语：产出 {zh, en}，widget 按界面语言挑选）──
 // 星期/今天/明天一律在用户本地时区判定；目标时刻是 UTC 窗口起点。
-fn sub_line_in(lang: &str, kind: &str, detail: &Map<String, Value>, now: i64, tz: Option<&str>) -> String {
+fn sub_line_in(
+    lang: &str,
+    kind: &str,
+    detail: &Map<String, Value>,
+    now: i64,
+    tz: Option<&str>,
+) -> String {
     let zh = lang == "zh";
     let cn = |dow: u32| CN_DAY[dow as usize];
     let en = |dow: u32| EN_DAY[dow as usize];
@@ -567,44 +757,86 @@ fn sub_line_in(lang: &str, kind: &str, detail: &Map<String, Value>, now: i64, tz
                 if t > now {
                     let h = (t - now) as f64 / HOUR as f64;
                     return if h < 1.0 {
-                        if zh { "即将重置".into() } else { "reset imminent".into() }
+                        if zh {
+                            "即将重置".into()
+                        } else {
+                            "reset imminent".into()
+                        }
                     } else if h < 48.0 {
                         let h = h.round() as i64;
-                        if zh { format!("{h} 小时后重置") } else { format!("reset in ~{h}h") }
+                        if zh {
+                            format!("{h} 小时后重置")
+                        } else {
+                            format!("reset in ~{h}h")
+                        }
                     } else {
                         let d = (h / 24.0).round() as i64;
-                        if zh { format!("{d} 天后重置") } else { format!("reset in {d} day{}", if d == 1 { "" } else { "s" }) }
+                        if zh {
+                            format!("{d} 天后重置")
+                        } else {
+                            format!("reset in {d} day{}", if d == 1 { "" } else { "s" })
+                        }
                     };
                 }
                 // 过点未落地一律"即将"：迟到是常态，宽限期内不换个说法吓人
-                return if zh { "即将重置".into() } else { "reset imminent".into() };
+                return if zh {
+                    "即将重置".into()
+                } else {
+                    "reset imminent".into()
+                };
             }
             // 窗口制 → 窗口最晚边的本地星期（hedge 口径，学 codex-reset.com）
             if let Some(we) = parse_ms(detail.get("windowEnd")) {
                 if we <= now {
-                    return if zh { "即将重置".into() } else { "reset imminent".into() }; // 窗口已过未确认 → 迟到中
+                    return if zh {
+                        "即将重置".into()
+                    } else {
+                        "reset imminent".into()
+                    }; // 窗口已过未确认 → 迟到中
                 }
                 if let Some((_, dow)) = local_ymd_w(we, tz) {
-                    return if zh { format!("最晚周{}重置", cn(dow)) } else { format!("reset by {}", en(dow)) };
+                    return if zh {
+                        format!("最晚周{}重置", cn(dow))
+                    } else {
+                        format!("reset by {}", en(dow))
+                    };
                 }
             }
             // 暗示/承诺：推文日子（PT 口径）+ UTC 窗口起点 → 本地星期/今天/明天
             if let Some(ts) = parse_ms(detail.get("targetStart")) {
                 let te = parse_ms(detail.get("targetEnd"));
                 if te.is_some_and(|e| ts <= now && now < e) {
-                    return if zh { "即将重置".into() } else { "reset imminent".into() }; // 已进入预告窗口
+                    return if zh {
+                        "即将重置".into()
+                    } else {
+                        "reset imminent".into()
+                    }; // 已进入预告窗口
                 }
                 if te.is_some_and(|e| e <= now) {
-                    return if zh { "即将重置".into() } else { "reset imminent".into() }; // 窗口已过 → 迟到中
+                    return if zh {
+                        "即将重置".into()
+                    } else {
+                        "reset imminent".into()
+                    }; // 窗口已过 → 迟到中
                 }
-                if let (Some((tgt, dow)), Some((cur, _)), Some((nxt, _))) =
-                    (local_ymd_w(ts, tz), local_ymd_w(now, tz), local_ymd_w(now + DAY, tz))
-                {
+                if let (Some((tgt, dow)), Some((cur, _)), Some((nxt, _))) = (
+                    local_ymd_w(ts, tz),
+                    local_ymd_w(now, tz),
+                    local_ymd_w(now + DAY, tz),
+                ) {
                     // 相对词按用户本地日期说：目标窗口落在本地今天/明天就直说，其余报星期
                     return if tgt == cur {
-                        if zh { "预计今天重置".into() } else { "reset expected today".into() }
+                        if zh {
+                            "预计今天重置".into()
+                        } else {
+                            "reset expected today".into()
+                        }
                     } else if tgt == nxt {
-                        if zh { "预计明天重置".into() } else { "reset expected tomorrow".into() }
+                        if zh {
+                            "预计明天重置".into()
+                        } else {
+                            "reset expected tomorrow".into()
+                        }
                     } else if zh {
                         format!("预计周{}重置", cn(dow))
                     } else {
@@ -613,34 +845,85 @@ fn sub_line_in(lang: &str, kind: &str, detail: &Map<String, Value>, now: i64, tz
                 }
             }
             if detail.get("confirmed").is_some() {
-                return if zh { "已预告重置".into() } else { "reset announced".into() };
+                return if zh {
+                    "已预告重置".into()
+                } else {
+                    "reset announced".into()
+                };
             }
             if detail.get("teaseTier").is_some() {
-                return if zh { "有重置暗示".into() } else { "reset hinted".into() };
+                return if zh {
+                    "有重置暗示".into()
+                } else {
+                    "reset hinted".into()
+                };
             }
             // 近期重置过（无预告的 happy）：落地后按 reset_type 分开说——发卡 vs 用量直充；未知走通用
             if let Some(ds) = detail.get("daysSince").and_then(|d| d.as_f64()) {
                 let days = ds.floor() as i64;
-                let (just, ago): (&str, Box<dyn Fn(i64) -> String>) = match detail.get("resetType").and_then(|r| r.as_str()) {
-                    Some("banked") => (
-                        if zh { "刚发了重置卡" } else { "card just issued" },
-                        Box::new(move |d| if zh { format!("上次发卡 {d} 天前") } else { format!("card issued {d}d ago") }),
-                    ),
-                    Some("regular") => (
-                        if zh { "用量刚重置" } else { "usage just reset" },
-                        Box::new(move |d| if zh { format!("用量 {d} 天前重置") } else { format!("usage reset {d}d ago") }),
-                    ),
-                    _ => (
-                        if zh { "刚刚重置" } else { "just reset" },
-                        Box::new(move |d| if zh { format!("上次重置 {d} 天前") } else { format!("last reset {d}d ago") }),
-                    ),
-                };
+                let (just, ago): (&str, Box<dyn Fn(i64) -> String>) =
+                    match detail.get("resetType").and_then(|r| r.as_str()) {
+                        Some("banked") => (
+                            if zh {
+                                "刚发了重置卡"
+                            } else {
+                                "card just issued"
+                            },
+                            Box::new(move |d| {
+                                if zh {
+                                    format!("上次发卡 {d} 天前")
+                                } else {
+                                    format!("card issued {d}d ago")
+                                }
+                            }),
+                        ),
+                        Some("regular") => (
+                            if zh {
+                                "用量刚重置"
+                            } else {
+                                "usage just reset"
+                            },
+                            Box::new(move |d| {
+                                if zh {
+                                    format!("用量 {d} 天前重置")
+                                } else {
+                                    format!("usage reset {d}d ago")
+                                }
+                            }),
+                        ),
+                        _ => (
+                            if zh { "刚刚重置" } else { "just reset" },
+                            Box::new(move |d| {
+                                if zh {
+                                    format!("上次重置 {d} 天前")
+                                } else {
+                                    format!("last reset {d}d ago")
+                                }
+                            }),
+                        ),
+                    };
                 return if ds < 1.0 { just.into() } else { ago(days) };
             }
-            if zh { "已预告重置".into() } else { "reset announced".into() }
+            if zh {
+                "已预告重置".into()
+            } else {
+                "reset announced".into()
+            }
         }
-        "unhappy" => if zh { "暂无重置预告".into() } else { "no reset news".into() }, // 不数天数：避免与个人订阅自动重置周期混淆
-        _ => if zh { "数据不可用".into() } else { "data unavailable".into() },
+        "unhappy" => {
+            if zh {
+                "暂无重置预告".into()
+            } else {
+                "no reset news".into()
+            }
+        } // 不数天数：避免与个人订阅自动重置周期混淆
+        _ => {
+            if zh {
+                "数据不可用".into()
+            } else {
+                "data unavailable".into()
+            }
+        }
     }
 }
 
@@ -648,7 +931,10 @@ fn sub_line_in(lang: &str, kind: &str, detail: &Map<String, Value>, now: i64, tz
 pub fn sub_line(s: &Value, now: i64, tz: Option<&str>) -> Value {
     let kind = s.get("kind").and_then(|k| k.as_str()).unwrap_or("offline");
     let empty = Map::new();
-    let detail = s.get("detail").and_then(|d| d.as_object()).unwrap_or(&empty);
+    let detail = s
+        .get("detail")
+        .and_then(|d| d.as_object())
+        .unwrap_or(&empty);
     json!({
         "zh": sub_line_in("zh", kind, detail, now, tz),
         "en": sub_line_in("en", kind, detail, now, tz),
@@ -657,17 +943,34 @@ pub fn sub_line(s: &Value, now: i64, tz: Option<&str>) -> Value {
 
 // 守护进程展示决策：新数据 > 12h 内缓存 > OFFLINE。cache = { state, at(ms) } | null
 pub const CACHE_MAX_AGE_MS: i64 = 12 * 3600_000;
-const SIGNAL_FIELDS: &[&str] = &["scheduledISO", "windowEnd", "targetStart", "teaseTier", "confirmed"];
+const SIGNAL_FIELDS: &[&str] = &[
+    "scheduledISO",
+    "windowEnd",
+    "targetStart",
+    "teaseTier",
+    "confirmed",
+];
 
-pub fn resolve_display(fresh: Option<&Value>, cache: Option<&Value>, now: i64, tz: Option<&str>) -> (Value, Value) {
+pub fn resolve_display(
+    fresh: Option<&Value>,
+    cache: Option<&Value>,
+    now: i64,
+    tz: Option<&str>,
+) -> (Value, Value) {
     if let Some(f) = fresh {
         if f.get("kind").and_then(|k| k.as_str()) != Some("offline") {
             return (f.clone(), json!({"state": f, "at": now}));
         }
     }
     let ok = cache.is_some_and(|c| {
-        let kind = c.get("state").and_then(|s| s.get("kind")).and_then(|k| k.as_str());
-        let has_detail = c.get("state").and_then(|s| s.get("detail")).is_some_and(|d| d.is_object());
+        let kind = c
+            .get("state")
+            .and_then(|s| s.get("kind"))
+            .and_then(|k| k.as_str());
+        let has_detail = c
+            .get("state")
+            .and_then(|s| s.get("detail"))
+            .is_some_and(|d| d.is_object());
         let at = c.get("at").and_then(|a| a.as_i64());
         matches!(kind, Some("happy") | Some("unhappy"))
             && has_detail
@@ -684,16 +987,24 @@ pub fn resolve_display(fresh: Option<&Value>, cache: Option<&Value>, now: i64, t
     let detail_v = s.get("detail").cloned().unwrap_or(json!({}));
     let detail = detail_v.as_object().cloned().unwrap_or_default();
     let last = parse_ms(detail_v.get("lastResetISO"));
-    let has_signal = SIGNAL_FIELDS.iter().any(|f| detail_v.get(*f).is_some_and(|v| !v.is_null()));
+    let has_signal = SIGNAL_FIELDS
+        .iter()
+        .any(|f| detail_v.get(*f).is_some_and(|v| !v.is_null()));
     if !has_signal && last.is_none() {
         return (s, c.clone());
     }
     let mut d2 = detail;
     if let Some(l) = last {
-        d2.insert("daysSince".into(), json!(((now - l) as f64 / DAY as f64).max(0.0)));
+        d2.insert(
+            "daysSince".into(),
+            json!(((now - l) as f64 / DAY as f64).max(0.0)),
+        );
     }
     let kind = if has_signal {
-        s.get("kind").and_then(|k| k.as_str()).unwrap_or("unhappy").to_string()
+        s.get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("unhappy")
+            .to_string()
     } else {
         let ds = d2.get("daysSince").and_then(|d| d.as_f64());
         if ds.is_some_and(|d| d <= UNHAPPY_AFTER_DAYS) {
@@ -704,5 +1015,8 @@ pub fn resolve_display(fresh: Option<&Value>, cache: Option<&Value>, now: i64, t
     };
     let interim = json!({"kind": kind, "detail": Value::Object(d2.clone())});
     d2.insert("sub".into(), sub_line(&interim, now, tz));
-    (json!({"kind": kind, "detail": Value::Object(d2)}), c.clone())
+    (
+        json!({"kind": kind, "detail": Value::Object(d2)}),
+        c.clone(),
+    )
 }

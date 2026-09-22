@@ -54,7 +54,10 @@ fn serve(map: HashMap<String, R>, hits: Arc<Mutex<Vec<String>>>) -> String {
                     R::Json(v) => (200, v.to_string()),
                     R::Status(c) => (*c, String::new()),
                 };
-                let out = format!("HTTP/1.1 {code} x\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+                let out = format!(
+                    "HTTP/1.1 {code} x\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
                 let _ = s.write_all(out.as_bytes());
             });
         }
@@ -72,7 +75,9 @@ fn sources(base: &str) -> Sources {
 }
 
 fn env(age_ms: i64, upstream: serde_json::Value) -> R {
-    R::Json(json!({"schema": 1, "fetched_at": is_tibo_happy::state::iso_pub(now_ms() - age_ms), "source_url": SOURCE_DIRECT, "upstream": upstream}))
+    R::Json(
+        json!({"schema": 1, "fetched_at": is_tibo_happy::state::iso_pub(now_ms() - age_ms), "source_url": SOURCE_DIRECT, "upstream": upstream}),
+    )
 }
 
 fn forecast() -> serde_json::Value {
@@ -88,7 +93,10 @@ const BP_PAGE: &str = "<div data-product-id=\"codex\"><li class=\"product-tracki
 #[test]
 fn primary_betteropc_page_parsed() {
     let hits = Arc::new(Mutex::new(vec![]));
-    let base = serve(HashMap::from([("/primary".into(), R::Text(BP_PAGE.into()))]), hits);
+    let base = serve(
+        HashMap::from([("/primary".into(), R::Text(BP_PAGE.into()))]),
+        hits,
+    );
     let (f, via) = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap();
     assert_eq!(via, "primary");
     assert_eq!(f["source"], "betteropc");
@@ -101,7 +109,10 @@ fn primary_non_page_falls_to_mirror() {
     let hits = Arc::new(Mutex::new(vec![]));
     let base = serve(
         HashMap::from([
-            ("/primary".into(), R::Text("<html>just a moment</html>".into())),
+            (
+                "/primary".into(),
+                R::Text("<html>just a moment</html>".into()),
+            ),
             ("/raw".into(), env(600_000, forecast())),
         ]),
         hits,
@@ -113,14 +124,25 @@ fn primary_non_page_falls_to_mirror() {
 #[test]
 fn primary_down_mirror_wins() {
     let hits = Arc::new(Mutex::new(vec![]));
-    let base = serve(HashMap::from([("/raw".into(), env(600_000, forecast()))]), hits);
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "mirror");
+    let base = serve(
+        HashMap::from([("/raw".into(), env(600_000, forecast()))]),
+        hits,
+    );
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "mirror"
+    );
 }
 
 #[test]
 fn fresh_raw_mirror_wins() {
     let hits = Arc::new(Mutex::new(vec![]));
-    let base = serve(HashMap::from([("/raw".into(), env(600_000, forecast()))]), hits);
+    let base = serve(
+        HashMap::from([("/raw".into(), env(600_000, forecast()))]),
+        hits,
+    );
     let (f, via) = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap();
     assert_eq!(via, "mirror");
     assert_eq!(f, forecast());
@@ -129,8 +151,16 @@ fn fresh_raw_mirror_wins() {
 #[test]
 fn raw_down_jsdelivr_mirror() {
     let hits = Arc::new(Mutex::new(vec![]));
-    let base = serve(HashMap::from([("/jsd".into(), env(3_600_000, forecast()))]), hits);
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "mirror");
+    let base = serve(
+        HashMap::from([("/jsd".into(), env(3_600_000, forecast()))]),
+        hits,
+    );
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "mirror"
+    );
 }
 
 #[test]
@@ -144,7 +174,12 @@ fn stale_mirrors_fall_to_direct() {
         ]),
         hits,
     );
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "direct");
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "direct"
+    );
 }
 
 #[test]
@@ -158,7 +193,12 @@ fn mirror_upstream_array_or_string_skipped() {
         ]),
         hits,
     );
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "direct");
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "direct"
+    );
 }
 
 #[test]
@@ -172,7 +212,12 @@ fn mirror_wrong_schema_not_json_404_skipped() {
         ]),
         hits.clone(),
     );
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "direct");
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "direct"
+    );
     let base = serve(
         HashMap::from([
             ("/raw".into(), R::Status(404)),
@@ -181,7 +226,12 @@ fn mirror_wrong_schema_not_json_404_skipped() {
         ]),
         hits,
     );
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "direct");
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "direct"
+    );
 }
 
 #[test]
@@ -209,7 +259,12 @@ fn direct_5xx_to_backup() {
         ]),
         hits,
     );
-    assert_eq!(fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap().1, "backup");
+    assert_eq!(
+        fetch_forecast_from(&sources(&base), "ua", now_ms())
+            .unwrap()
+            .1,
+        "backup"
+    );
 }
 
 #[test]
@@ -219,13 +274,19 @@ fn everything_down_throws_with_all_reasons() {
     let err = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap_err();
     assert!(err.starts_with("all sources failed:"));
     // 五个源各自的失败原因都在串里（连接拒绝文本五份）
-    assert!(err.matches("refused").count() + err.matches('/').count() >= 5 || err.matches("failed").count() >= 1);
+    assert!(
+        err.matches("refused").count() + err.matches('/').count() >= 5
+            || err.matches("failed").count() >= 1
+    );
 }
 
 #[test]
 fn mirror_may_carry_backup_shaped_upstream() {
     let hits = Arc::new(Mutex::new(vec![]));
-    let base = serve(HashMap::from([("/raw".into(), env(60_000, resets()))]), hits);
+    let base = serve(
+        HashMap::from([("/raw".into(), env(60_000, resets()))]),
+        hits,
+    );
     let (f, via) = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap();
     assert_eq!(via, "mirror");
     assert_eq!(f, resets());
@@ -234,7 +295,10 @@ fn mirror_may_carry_backup_shaped_upstream() {
 #[test]
 fn every_request_carries_our_ua() {
     let hits = Arc::new(Mutex::new(vec![]));
-    let base = serve(HashMap::from([("/raw".into(), env(0, forecast()))]), hits.clone());
+    let base = serve(
+        HashMap::from([("/raw".into(), env(0, forecast()))]),
+        hits.clone(),
+    );
     fetch_forecast_from(&sources(&base), "is-tibo-happy/test", now_ms()).unwrap();
     let h = hits.lock().unwrap();
     assert!(!h.is_empty() && h.iter().all(|x| x.contains("ua:is-tibo-happy/test")));
