@@ -229,6 +229,14 @@ struct Daemon {
     tz: Option<String>,
 }
 
+// inspector_init 的三态：宽限（Deferred）既不算成功也不记三振——owner-mismatch
+// 和启动竞态不该洗掉已累积的 attach 失败计数（宽限推迟 ≠ 既往不咎）
+enum InitRes {
+    Ok,
+    Deferred,
+    Failed,
+}
+
 impl Daemon {
     fn fetch_state(&self) -> Value {
         let now = now_ms();
@@ -269,6 +277,22 @@ impl Daemon {
             }
         }
         state
+    }
+
+    // 不走网络的展示态：60s 内取过的数据直接重解析。init 重试热路径用——
+    // attach 失败时白跑一轮 5 源 fetch（最坏 ~58s 超时预算）纯属浪费
+    fn display_state(&self) -> Value {
+        if now_ms() - *self.last_fetch_at.lock().unwrap() < 60_000 {
+            let c = self.cache.lock().unwrap();
+            return resolve_display(
+                None,
+                if c.is_null() { None } else { Some(&c) },
+                now_ms(),
+                self.tz.as_deref(),
+            )
+            .0;
+        }
+        self.fetch_state()
     }
 
     fn eval(&self, expr: &str) -> Result<Value, String> {
@@ -329,12 +353,20 @@ impl Daemon {
             // inspector 通道：无常驻连接——attach→会话→detach。
             // attach 失败不能静默吞（钩子已挂时状态会永久停滞）：记日志+清 hooked，
             // 引回主循环里被三振计数/启动宽限约束的 init 路径
+            // 未挂上且 init 在退避期：push 侧也别白 attach——widget 死着推了也没人接，
+            // 恢复信号由退避到期后的 init 路径确认（load 钩子会让 widget 先自己长回来）
+            if self.hooked_pid.load(Ordering::Relaxed) == 0 && self.init_backoff() {
+                return;
+            }
             // 取数在会话外做（同 inspector_init 的理由）
             let s = self.fetch_state();
             let _g = self.insp_lock.lock().unwrap();
             match inspector::attach(&self.exe) {
                 Ok((conn, _)) => {
-                    self.inspector_session(&conn, true, &s);
+                    // 探活成功 = 恢复证据：清掉残留的 init 退避（钩子在窗口期已自己注入）
+                    if self.inspector_session(&conn, true, &s) {
+                        self.note_init_ok();
+                    }
                     if !inspector::detach(&conn) {
                         log!("inspector close unconfirmed — 9229 may still be open");
                     }
@@ -362,7 +394,9 @@ impl Daemon {
     // 推态 → 同步 restore 存量。s 是会话外预先取好的展示态。
     // reinit_on_missing=true 用于推送路径：补注也挂=页面不可写，清 hooked 交回
     // 主循环 init（计退避）；init 刚注过则 false——页面在加载属正常，load 钩子兜住。
-    fn inspector_session(&self, conn: &Cdp, reinit_on_missing: bool, s: &Value) {
+    // 返回值 = 会话末 widget 是否确认活着（探活或补注成功且推态无误）。
+    // 调用方据此决定 init 退避计数的走向——不看它就会把"页面已死"误记成"init 成功"
+    fn inspector_session(&self, conn: &Cdp, reinit_on_missing: bool, s: &Value) -> bool {
         let (alive, events) = inspector::drain_pending(conn);
         for (k, _) in events {
             if let Some(label) = k.strip_prefix("menu-unmatched:") {
@@ -384,7 +418,7 @@ impl Daemon {
                     self.hooked_pid.store(0, Ordering::Relaxed);
                     self.note_init_fail();
                 }
-                return; // 页面无 widget 时 setState 静默 no-op，推了也是吞状态
+                return false; // 页面无 widget 时 setState 静默 no-op，推了也是吞状态
             }
         }
         let r = self.push_via(s, |e| inspector::eval_page(conn, e));
@@ -403,6 +437,7 @@ impl Daemon {
         if r.as_ref().err().is_some_and(|e| e.contains("no main window")) {
             self.hooked_pid.store(0, Ordering::Relaxed);
         }
+        r.is_ok()
     }
 
     // init_page 失败退避：不算 attach 三振（连接本身好着，是页面侧没就绪/改版），
@@ -427,31 +462,32 @@ impl Daemon {
     }
 
     // inspector 通道初始化：SIGUSR1 附加 → 注册重注入钩子+注入 → 同连接收事件+
-    // 首轮推送 → detach。返回 false = attach 失败（累计后降级端口模式）；
-    // init 失败多半是 App 启动中或页面不可写，计退避不算 attach 失败。
-    fn inspector_init(&self) -> bool {
+    // 首轮推送 → detach。三态返回：Ok = 挂上且 widget 活着；Failed = attach 失败
+    // （累计后降级端口模式）；Deferred = 宽限不记三振也不清零——竞态/蹲坑不算
+    // 既往不咎，三振计数跨宽限存活。init 失败多半页面没就绪，计退避不算 attach 失败。
+    fn inspector_init(&self) -> InitRes {
         let Some(pid) = inspector::main_pid(&self.exe) else {
-            return true; // 主进程不在是上层竞态，不算失败
+            return InitRes::Deferred; // 主进程不在是上层竞态，不算失败也不算成功
         };
         if self.hooked_pid.load(Ordering::Relaxed) == pid {
-            return true;
+            return InitRes::Ok;
         }
         // 网络取数在 inspector 会话外做：fetch 最坏 ~58s 超时预算，
-        // 不该开着 9229（main 进程级入口）等网络
-        let s = self.fetch_state();
+        // 不该开着 9229（main 进程级入口）等网络；重试时复用近期取数
+        let s = self.display_state();
         {
             let _g = self.insp_lock.lock().unwrap();
             let (conn, pid) = match inspector::attach(&self.exe) {
                 Ok(v) => v,
                 Err(e) => {
-                    // attach 失败一律歇 30s：fetch 已先行，不歇就每 5s 白取一轮
+                    // attach 失败一律歇 30s：不歇就每 5s 重试一轮
                     *self.next_init_at.lock().unwrap() =
                         Some(Instant::now() + Duration::from_secs(30));
                     // 9229 被无关 inspector 占用：不是宿主能力问题——不记三振，
                     // 降级路径会为一个蹲坑的进程重启用户 App，太亏
                     if e.contains("owner mismatch") {
                         log!("inspector attach deferred (foreign inspector): {e}");
-                        return true;
+                        return InitRes::Deferred;
                     }
                     // 同 pid 且刚起 = 启动中竞态，不记 strike；
                     // pid 没了/换了 = 可能是信号把它杀了（无 handler 的最坏情形）
@@ -463,10 +499,10 @@ impl Daemon {
                         .map_or(false, |t| t.elapsed() < Duration::from_secs(120));
                     if young && inspector::main_pid(&self.exe) == Some(pid) {
                         log!("inspector attach deferred (app starting): {e}");
-                        return true;
+                        return InitRes::Deferred;
                     }
                     log!("inspector attach: {e}");
-                    return false;
+                    return InitRes::Failed;
                 }
             };
             let av = crate::avatar_json();
@@ -481,20 +517,28 @@ impl Daemon {
                     self.hooked_pid.store(pid, Ordering::Relaxed);
                     // 首装授权到此兑现——不消费的话用户每次关 Codex 都会被重新拉起
                     let _ = std::fs::remove_file(&self.first_flag);
-                    self.note_init_ok();
                     *self.last_pushed.lock().unwrap() = String::new();
                     log!("inspector attached pid {pid} — widget live, zero restart");
                     // detach→再 attach 会撞上宿主侧 50ms inspector.close() 定时器被
                     // 强杀（真机首推命中率仅 40%）——首轮推送在同一连接内完成；
                     // catch_unwind 同 push()：panic 不得把 pushing 卡在 true
+                    // 探活结果决定退避计数走向：挂上但 widget 死了不算 init 成功
+                    // （否则死窗口场景退避会被 init_ok 反复清零、停在 30s 档）
+                    let mut live = None;
                     if !self.pushing.swap(true, Ordering::SeqCst) {
                         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             self.inspector_session(&conn, false, &s)
                         }));
                         self.pushing.store(false, Ordering::SeqCst);
-                        if r.is_err() {
-                            log!("inspector session panicked");
+                        match r {
+                            Ok(l) => live = Some(l),
+                            Err(_) => log!("inspector session panicked"),
                         }
+                    }
+                    match live {
+                        Some(true) => self.note_init_ok(),
+                        Some(false) => self.note_init_fail(),
+                        None => {} // 另一路正在推：探活无结论，退避维持原样
                     }
                 }
                 Err(e) => {
@@ -506,7 +550,7 @@ impl Daemon {
                 log!("inspector close unconfirmed — 9229 may still be open");
             }
         }
-        true
+        InitRes::Ok
     }
 
     fn inject(&self, cdp_conn: &Arc<Cdp>) -> Result<(), String> {
@@ -849,13 +893,18 @@ pub fn run(args: &[String]) -> i32 {
             // 退避期跳过 init 但不清 attach_fails——否则退避会把三振计数静默洗掉
             if d.init_backoff() {
                 // fallthrough：不 init，直接走 wait/once 收尾
-            } else if d.inspector_init() {
-                attach_fails = 0;
             } else {
-                attach_fails += 1;
-                if attach_fails >= 3 {
-                    d.inspector_ok.store(false, Ordering::Relaxed);
-                    log!("inspector attach x{attach_fails} failed — falling back to debug-port mode");
+                match d.inspector_init() {
+                    InitRes::Ok => attach_fails = 0,
+                    // 宽限不记也不洗：owner-mismatch/启动竞态推迟止损而非清零
+                    InitRes::Deferred => {}
+                    InitRes::Failed => {
+                        attach_fails += 1;
+                        if attach_fails >= 3 {
+                            d.inspector_ok.store(false, Ordering::Relaxed);
+                            log!("inspector attach x{attach_fails} failed — falling back to debug-port mode");
+                        }
+                    }
                 }
             }
             // inspector 模式的 --once 不摘 widget：钩子与 restore 已登记在 main 进程，
