@@ -26,4 +26,4 @@ jobs:
           git commit -m "mirror: forecast $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
       # jsDelivr @main 边缘缓存最长 12h > 客户端 6h 新鲜窗，push 后主动失效
-      - run: curl -fsS -X POST "https://purge.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/public/state.json" || true
+      - run: curl -fsS "https://purge.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/public/state.json" || true
