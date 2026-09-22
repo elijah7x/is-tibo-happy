@@ -8,7 +8,7 @@ Native size: **48×48 CSS px**
 
 ## What production may consume
 
-- `avatar.json` — canonical runtime asset used by `src/is-tibo-happy.mjs`.
+- `avatar.json` — canonical runtime asset, embedded into the `native/` binary at build time.
 - `png/tibo-{happy,unhappy}-48.png` — native lossless visual references.
 - `png/tibo-{happy,unhappy}-{96,144,192,384}.png` — exact integer nearest-neighbor exports.
 - `MANIFEST.json` — version, aliases, export rules, and SHA-256 checksums.

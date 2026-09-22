@@ -20,13 +20,13 @@ curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/install
 curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | bash
 ```
 
-**需要**：macOS · Codex 桌面版（ChatGPT.app）· Node.js ≥ 22（没有就 `brew install node`）。
+**需要**：macOS · Codex 桌面版（ChatGPT.app）。没有 Node、没有任何依赖——就一个原生二进制（Apple Silicon 与 Intel 通用）。
 
 装完即生效：如果 Codex 正在运行，它会**重启一次**（对话不丢）——这是唯一一次打扰。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
 
 ## 更新
 
-再跑一次上面的安装命令即可——脚本是幂等的，只会替换文件并就地重启守护进程。（特意没有做自动更新。）
+守护进程每天检查一次新版本，自动换上（sha256 校验 + 自检通过后原子替换，launchd 拉起新版）。想关掉：plist 里加 `--no-update` 参数，或设 `ITH_NO_UPDATE=1`。手动检查：`~/Library/Application\ Support/is-tibo-happy/is-tibo-happy update`。
 
 ## 卸载
 
@@ -60,13 +60,13 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 ## 它怎么工作
 
 ```
-后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 50MB 内存）
+后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 10MB 内存）
   └─ 每 15 分钟拉一次公开重置数据（打开菜单时也顺手刷新）
   └─ 通过 CDP 往账号菜单注入一张卡片——不改 App 本体
 ```
 
 - 不改 App 文件、不装浏览器扩展、不读你的对话
-- 出网只有一件事：拉公开的重置预告 JSON，带自报家门的 User-Agent（`is-tibo-happy/0.1`）
+- 出网只有两件事：拉公开的重置预告 + 每天一次版本检查，带自报家门的 User-Agent（`is-tibo-happy/0.2`）
 - 你退出 Codex，它就安静等着；你打开，它才接上。绝不替你启动 Codex
 - 卡片零定时器、零动画、零网络请求，菜单关了就卸掉
 
@@ -86,7 +86,7 @@ GitHub Actions 每 20 分钟抓一次源站 → 存成 public/state.json
 | 给了准确时间 | HAPPY · `6 天后重置` / `3 小时后重置` / `即将重置` |
 | 给了截止（"周二前"） | HAPPY · `最晚周二重置` |
 | 暗示了一下（"coming Tuesday"） | HAPPY · `预计周二重置` |
-| 预告时点过了、未确认 | HAPPY · `随时重置` |
+| 预告时点过了、未确认 | HAPPY · `即将重置` |
 | 刚重置过（三天内） | HAPPY · `刚刚重置` / `上次重置 2 天前` |
 | 三天没消息 | UNHAPPY · `暂无重置预告` |
 | 连续 12h 拿不到数据 | OFFLINE · `数据不可用` |
@@ -101,11 +101,8 @@ GitHub Actions 每 20 分钟抓一次源站 → 存成 public/state.json
 **Codex 更新后卡片消失了？**
 守护进程会自动重连。如果界面改版导致找不到挂载点，日志里会有 `menu-unmatched`，欢迎开 issue。
 
-**用 nvm / fnm / volta 装的 Node？**
-安装器会记住当前 Node 的绝对路径。你切换或删除那个版本，后台服务会停。建议 `brew install node` 装一个稳定的。
-
 **想看源码 / 移植？**
-运行时代码 5 个文件（`src/`，约 900 行），零依赖。`node --test 'test/*.test.mjs'` 跑 50 条规格测试。Windows/Linux 欢迎 fork 移植——`install.sh` 里就是要重新实现的部分。
+运行时是一个 Rust 二进制（`native/`，约 1600 行）；注入卡片的 widget 仍是 JS（`src/widget.js`）。`cargo test --manifest-path native/Cargo.toml` 跑 75 条规格测试。Windows/Linux 欢迎 fork 移植——`install.sh` 里就是要重新实现的部分。
 
 ---
 

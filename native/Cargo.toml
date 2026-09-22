@@ -1,0 +1,28 @@
+[package]
+name = "is-tibo-happy"
+version = "0.2.0"
+edition = "2021"
+description = "Tiny Codex companion: pixel avatar in the account menu reporting public reset signals"
+license = "MIT"
+
+[[bin]]
+name = "is-tibo-happy"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+ureq = { version = "2", features = ["json"] }   # blocking HTTP，够用了（守护进程是串行负载）
+tungstenite = { version = "0.26", default-features = false, features = ["handshake"] }  # ws:// 明文 CDP，不需要 TLS
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
+iana-time-zone = "0.1"
+regex = "1"
+sha2 = "0.10"                   # 热更新校验下载产物
+semver = "1"
+ctrlc = "3"                     # SIGINT/SIGTERM → 优雅退出（先摘 widget）
+wait-timeout = "0.2"            # execSync 带超时等价物（ps/pgrep/osascript 5s 上限）
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

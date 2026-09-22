@@ -22,13 +22,13 @@ China-friendly mirror (jsDelivr):
 curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | bash
 ```
 
-**Requires**: macOS · Codex desktop (ChatGPT.app) · Node.js ≥ 22 (`brew install node`).
+**Requires**: macOS · Codex desktop (ChatGPT.app). No Node, no dependencies — one native binary (Apple Silicon + Intel universal).
 
 That's it. If Codex is running it restarts **once** (no chats lost); then Tibo sits under your name in the bottom-left account menu. Auto-starts on login, re-attaches when Codex restarts.
 
 ## Update
 
-Re-run the install command above — it's idempotent, so it just replaces the files and restarts the daemon in place. (There is no auto-updater, on purpose.)
+The daemon checks for a new release once a day and swaps itself in (sha256-verified, self-tested, restarted by launchd). To opt out, set `ITH_NO_UPDATE=1` or re-run with `--no-update` in the plist. Manual check: `~/Library/Application\ Support/is-tibo-happy/is-tibo-happy update`.
 
 ## Uninstall
 
@@ -62,13 +62,13 @@ If local-process isolation matters to you, don't install.
 ## How it works
 
 ```
-LaunchAgent daemon (idle ≈ 0% CPU, ~50 MB)
+LaunchAgent daemon (idle ≈ 0% CPU, ~10 MB)
   └─ fetches public reset data every 15 min (and on menu open)
   └─ injects one card into the profile menu via CDP — app files untouched
 ```
 
 - No app patching, no browser extension, no reading your chats
-- Only outbound traffic: public reset endpoints with a self-declared UA (`is-tibo-happy/0.1`)
+- Only outbound traffic: public reset endpoints + a daily release check, with a self-declared UA (`is-tibo-happy/0.2`)
 - You quit Codex → it waits quietly; you reopen it → it attaches. It never launches Codex for you
 - The widget has zero timers, zero animation, zero network calls; unmounts when the menu closes
 
@@ -88,7 +88,7 @@ The source sites only ever see one polite cron job. Four fallback tiers, all tim
 | An exact time | HAPPY · `reset in 6 days` / `reset in ~3h` / `reset imminent` |
 | A deadline ("by Tuesday") | HAPPY · `reset by Tuesday` |
 | A tease ("coming Tuesday") | HAPPY · `reset expected Tuesday` |
-| Teased time passed, unconfirmed | HAPPY · `reset any time now` |
+| Teased time passed, unconfirmed | HAPPY · `reset imminent` |
 | It just reset (≤3 days) | HAPPY · `just reset` / `last reset 2d ago` |
 | Nothing for 3+ days | UNHAPPY · `no reset news` |
 | No data for 12+ hours | OFFLINE · `data unavailable` |
@@ -103,11 +103,8 @@ Weekdays are converted to **your timezone** (his "Tuesday" may be Wednesday morn
 **Card vanished after a Codex update?**
 The daemon re-attaches automatically. If an UI redesign breaks menu detection, the log shows `menu-unmatched` — please open an issue.
 
-**Node installed via nvm/fnm/volta?**
-The installer records the current Node absolute path. Deleting or switching that version stops the daemon. `brew install node` is the sturdy option.
-
 **Hack on it?**
-Runtime is 5 dependency-free files in `src/` (~900 lines). `node --test 'test/*.test.mjs'` runs 75 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
+Runtime is a single Rust binary (`native/`, ~1600 lines); the injected card stays JS (`src/widget.js`). `cargo test --manifest-path native/Cargo.toml` runs 75 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
 
 ---
 

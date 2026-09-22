@@ -13,10 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
-        with:
-          node-version: 22
-      - run: node tools/mirror-fetch.mjs
+      - name: build fetch-state（同一实现，防双状态机漂移）
+        run: cargo build --release --manifest-path native/Cargo.toml
+      - run: ./native/target/release/is-tibo-happy fetch-state
       - name: commit state.json
         run: |
           git config user.name "is-tibo-happy-bot"
