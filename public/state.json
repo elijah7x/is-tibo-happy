@@ -1,20 +1,233 @@
 {
-  "fetched_at": "2026-09-22T07:30:59.018Z",
+  "fetched_at": "2026-09-22T13:06:11.683Z",
   "schema": 1,
-  "source_url": "https://betteropc.com/ai-products/reset-signals/codex",
+  "source_url": "https://codex-reset.com/api/forecast",
   "upstream": {
-    "commitment": {
-      "posted_at": "2026-09-19T16:48:38.000Z",
-      "scheduled_for": "2026-09-22T10:00:00.000Z",
-      "text": "scheduled reset",
-      "url": "https://x.com/thsottiaux/status/2101352781219258527"
+    "age_days": 10.2,
+    "alert_event_id": "signal:2102254445082116335:likely",
+    "backtest": {
+      "baseline_brier": 0.106,
+      "better_than_naive": true,
+      "better_than_rate_v2": false,
+      "brier": 0.105,
+      "rate_v2_brier": 0.104,
+      "sample_size": 311,
+      "status": "experimental"
+    },
+    "cadence": {
+      "accelerating": false,
+      "recent_median_days": 5.5,
+      "recent_sample": 5,
+      "weighted_mean_days": 5.7
+    },
+    "confidence": "low",
+    "confidence_note": "Experimental: walk-forward backtest has not beaten both baselines yet.",
+    "context": {
+      "effect": "informational_only",
+      "evidence_ids": [
+        "2102254445082116335",
+        "2101352781219258527"
+      ],
+      "multiplier": 1,
+      "negative_supported": false,
+      "primary_post": {
+        "at": "2026-09-19T16:48:38.000Z",
+        "id": "2101352781219258527",
+        "quote": "OK fine. But it’s also still coming in Tuesday",
+        "signal": "TEASE",
+        "url": "https://x.com/thsottiaux/status/2101352781219258527"
+      },
+      "since": "2026-09-15T13:05:19.684Z",
+      "state": "TEASE",
+      "window_days": 7
+    },
+    "context_copy": {
+      "en": "👀 Tibo, last 7 days: a hint on Sep 19 — \"OK fine. But it’s also still coming in Tuesday\". Not a confirmed promise; the number above does not change for it.",
+      "es": "👀 Tibo, últimos 7 días: una insinuación el 19 de sep — \"OK fine. But it’s also still coming in Tuesday\". No es una promesa confirmada; el número de arriba no cambia por ello.",
+      "ja": "👀 Tibo 直近 7 日：9月19日にほのめかし —「OK fine. But it’s also still coming in Tuesday」。確定した約束ではなく、上の確率はこれで変わりません。",
+      "zh": "👀 Tibo 近 7 天：9 月 19 日有一条暗示——\"OK fine. But it’s also still coming in Tuesday\"。不是明确承诺，上面的概率不因它改变。"
+    },
+    "evidence": [
+      {
+        "code": "recent_cadence",
+        "detail": "a reset every ~5.5d across the last 5 (weighted mean 5.7d)",
+        "href": "/timeline",
+        "label": "Recent cadence",
+        "params": {
+          "recent_median_days": 5.5,
+          "recent_sample": 5,
+          "weighted_mean_days": 5.7
+        }
+      },
+      {
+        "code": "last_reset",
+        "detail": "2026-09-12 (10.2d ago)",
+        "href": "https://x.com/thsottiaux/status/2098685367058612394",
+        "label": "Last reset",
+        "params": {
+          "age_days": 10.2,
+          "date": "2026-09-12"
+        }
+      },
+      {
+        "code": "common_window",
+        "detail": "11 PM - 2 AM in UTC",
+        "href": "/timeline",
+        "label": "Most common window",
+        "params": {
+          "timezone": "UTC",
+          "window_label": "11 PM - 2 AM"
+        }
+      }
+    ],
+    "hint_copy": {
+      "en": "👀 Tibo, last 7 days: a hint on Sep 19 — \"OK fine. But it’s also still coming in Tuesday\". Not a confirmed promise; the number above does not change for it.",
+      "es": "👀 Tibo, últimos 7 días: una insinuación el 19 de sep — \"OK fine. But it’s also still coming in Tuesday\". No es una promesa confirmada; el número de arriba no cambia por ello.",
+      "ja": "👀 Tibo 直近 7 日：9月19日にほのめかし —「OK fine. But it’s also still coming in Tuesday」。確定した約束ではなく、上の確率はこれで変わりません。",
+      "zh": "👀 Tibo 近 7 天：9 月 19 日有一条暗示——\"OK fine. But it’s also still coming in Tuesday\"。不是明确承诺，上面的概率不因它改变。"
     },
     "last_reset_at": "2026-09-12T08:09:17.000Z",
-    "source": "betteropc",
-    "today": {
-      "date": "2026-09-22",
-      "status": "none"
+    "latest_alert": {
+      "corrected": false,
+      "id": "2102254445082116335",
+      "kind": "watch",
+      "score": 93,
+      "source_at": "2026-09-22T04:31:32.000Z",
+      "state": "active",
+      "summary": "Ladies and gentlemen... start... your... ENGINES. We are almost Tuesday and I promised a reset for Tuesday. Among some other things. See you soon.",
+      "url": "https://x.com/thsottiaux/status/2102254445082116335",
+      "window": {
+        "end_at": "2026-09-23T06:59:59.999Z",
+        "label": "end of Tuesday",
+        "start_at": "2026-09-22T04:31:32.000Z",
+        "target_at": "2026-09-23T06:59:59.999Z",
+        "target_kind": "deadline",
+        "time_zone": "America/Los_Angeles"
+      }
     },
-    "updated_at": "2026-09-22T02:08:25.309Z"
+    "latest_hint": {
+      "at": "2026-09-19T16:48:38.000Z",
+      "day": null,
+      "id": "2101352781219258527",
+      "quote": "OK fine. But it’s also still coming in Tuesday",
+      "url": "https://x.com/thsottiaux/status/2101352781219258527"
+    },
+    "milestone_watch": null,
+    "mode": "announced",
+    "model": {
+      "base_daily_rate": 0.197,
+      "effective_sample_size": 26.7,
+      "half_life_days": 60,
+      "version": "rate-v3",
+      "window_intervals": 8
+    },
+    "model_token": null,
+    "official_signal": {
+      "alert_event_id": "signal:2102254445082116335:likely",
+      "at": "2026-09-22T04:31:32.000Z",
+      "delivery_destination": "alerts",
+      "kind": "signal",
+      "score": {
+        "band": "dated_commitment",
+        "base": 93,
+        "modifiers": [],
+        "value": 93
+      },
+      "signal_tier": "likely",
+      "signal_type": "dated_commitment",
+      "summary": "Ladies and gentlemen... start... your... ENGINES. We are almost Tuesday and I promised a reset for Tuesday. Among some other things. See you soon.",
+      "tweet_id": "2102254445082116335",
+      "url": "https://x.com/thsottiaux/status/2102254445082116335",
+      "window": {
+        "end_at": "2026-09-23T06:59:59.999Z",
+        "label": "end of Tuesday",
+        "start_at": "2026-09-22T04:31:32.000Z",
+        "target_at": "2026-09-23T06:59:59.999Z",
+        "target_kind": "deadline",
+        "time_zone": "America/Los_Angeles"
+      }
+    },
+    "probabilities": {
+      "commitment": 0.93,
+      "commitment_floor_percent": 93,
+      "model_24h": 20,
+      "model_48h": 35,
+      "range_24h": {
+        "lower": 0.104,
+        "upper": 0.34
+      },
+      "range_48h": {
+        "lower": 0.228,
+        "upper": 0.506
+      },
+      "raw_24h": 0.19679513906745555,
+      "raw_48h": 0.35486195137433196,
+      "rounded_24h": 20,
+      "rounded_48h": 35,
+      "signal_percent": 93,
+      "tease_floor_24h": null,
+      "tease_floor_48h": null,
+      "tease_tier": null
+    },
+    "range_aria": {
+      "en": {
+        "h24": "Reset chance in the next 24 hours: 20%, range 10–34%",
+        "h48": "Reset chance by 48 hours: 35%, range 23–51%"
+      },
+      "es": {
+        "h24": "Probabilidad de reset en las próximas 24 horas: 20 %, rango 10–34 %",
+        "h48": "Probabilidad de reset en 48 horas: 35 %, rango 23–51 %"
+      },
+      "ja": {
+        "h24": "今後 24 時間のリセット確率：20%、範囲 10–34%",
+        "h48": "48 時間以内のリセット確率：35%、範囲 23–51%"
+      },
+      "zh": {
+        "h24": "未来 24 小时重置概率：20%，区间 10–34%",
+        "h48": "48 小时内重置概率：35%，区间 23–51%"
+      }
+    },
+    "signal_score": {
+      "band": "dated_commitment",
+      "base": 93,
+      "modifiers": [],
+      "value": 93
+    },
+    "signal_tier": "likely",
+    "tease_card_note": null,
+    "tease_post_age": null,
+    "tease_signal": null,
+    "teased_window": null,
+    "time_window": {
+      "end_hour": 2,
+      "label": "11 PM - 2 AM",
+      "start_hour": 23,
+      "timezone": "UTC"
+    },
+    "updated_at": "2026-09-22T13:05:19.684Z",
+    "wait_comparison": {
+      "basis": "recent_completed_intervals",
+      "longest_days": 11,
+      "mean_days": 5.3,
+      "median_days": 4.9,
+      "position": "longer_than_most",
+      "sample": 8,
+      "sample_end_at": "2026-09-12T08:09:17.000Z",
+      "shorter_share": 0.875,
+      "wait_days": 10.2,
+      "window_intervals": 8
+    },
+    "wait_copy": {
+      "en": "You have waited 10.2 days; 88% of the latest 8 completed reset intervals were shorter. Typical wait 4.9 days, average 5.3, longest 11. Recent history, not a schedule. This historical baseline uses up to 8 completed intervals. Ordinary posts and hints are not extra probability factors. Sample through 2026-09-12 08:09:17 UTC.",
+      "es": "Llevas 10,2 días esperando; el 88 % de los últimos 8 intervalos completos entre reinicios fueron más cortos. Espera típica 4,9 días, media 5,3, la más larga 11. Es historia reciente, no un calendario. Esta probabilidad histórica base usa hasta 8 intervalos completos recientes. Los mensajes habituales y las insinuaciones no son factores adicionales de probabilidad. Muestra hasta el 2026-09-12 08:09:17 UTC.",
+      "ja": "待ち始めて 10.2 日。直近 8 件の完了したリセット間隔の 88% は、現在の待ち時間より短いものでした。典型 4.9 日、平均 5.3 日、最長 11 日。直近の記録であり、予定表ではありません。履歴ベースの確率には直近最大 8 件の完了した間隔を使います。通常の投稿や示唆は追加の確率要因に含めません。サンプルは 2026-09-12 08:09:17 UTC 時点。",
+      "zh": "你已等了 10.2 天；最近 8 个完整重置间隔中，88% 短于当前等待。典型间隔 4.9 天，平均 5.3 天，最长 11 天。这是近期历史，不是倒计时。历史基准概率使用最近最多 8 个完整间隔，普通推文和暗示未作为额外概率因子。样本截至 2026-09-12 08:09:17 UTC。"
+    },
+    "wait_token": {
+      "en": "wait 10.2d · last 8: 88% shorter",
+      "es": "espera 10,2 d · últ. 8: 88% más cortas",
+      "ja": "待ち10.2日 · 直近8件 88%が短い",
+      "zh": "已等 10.2 天 · 近8次 88%更短"
+    }
   }
 }
