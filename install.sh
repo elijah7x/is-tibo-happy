@@ -20,14 +20,18 @@ done
 
 echo "▸ 下载二进制 → ${DEST}（universal2，sha256 校验后自检）"
 mkdir -p "$DEST"
-curl -fsSL --connect-timeout 8 --max-time 300 "$REL/$NAME" -o "$DEST/$NAME" \
-  || { echo "二进制下载失败（GitHub Releases 不可达——境内网络可先开代理再重试）"; exit 1; }
+# 下到 .new 再原子 mv：原地覆盖正在运行的二进制会让后续 exec 被内核 SIGKILL
+curl -fsSL --connect-timeout 8 --max-time 300 "$REL/$NAME" -o "$DEST/$NAME.new" \
+  || { echo "二进制下载失败（GitHub Releases 不可达——境内网络可先开代理再重试）"; rm -f "$DEST/$NAME.new"; exit 1; }
 curl -fsSL --connect-timeout 8 --max-time 30 "$REL/SHA256SUMS" -o "$DEST/SHA256SUMS" \
-  || { echo "校验文件下载失败"; exit 1; }
-( cd "$DEST" && grep " $NAME\$" SHA256SUMS | shasum -a 256 -c - >/dev/null ) \
-  || { echo "二进制校验失败（下载被篡改或损坏），已中止"; rm -f "$DEST/$NAME"; exit 1; }
-chmod 755 "$DEST/$NAME"
-"$DEST/$NAME" --selftest || { echo "二进制自检失败"; exit 1; }
+  || { echo "校验文件下载失败"; rm -f "$DEST/$NAME.new"; exit 1; }
+EXPECTED="$(grep " $NAME\$" "$DEST/SHA256SUMS" | awk '{print $1}')"
+ACTUAL="$(shasum -a 256 "$DEST/$NAME.new" | awk '{print $1}')"
+[ -n "$EXPECTED" ] && [ "$EXPECTED" = "$ACTUAL" ] \
+  || { echo "二进制校验失败（下载被篡改或损坏），已中止"; rm -f "$DEST/$NAME.new"; exit 1; }
+chmod 755 "$DEST/$NAME.new"
+"$DEST/$NAME.new" --selftest || { echo "二进制自检失败"; rm -f "$DEST/$NAME.new"; exit 1; }
+mv -f "$DEST/$NAME.new" "$DEST/$NAME"
 [ -f "$PLIST" ] || touch "$DEST/.first-run"   # 仅首次安装授权拉起 App；重装不打扰
 
 echo "▸ 注册并启动后台服务（LaunchAgent）"

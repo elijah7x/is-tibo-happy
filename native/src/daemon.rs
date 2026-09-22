@@ -747,7 +747,13 @@ pub fn run(args: &[String]) -> i32 {
             if once {
                 break;
             }
-            sleep_seg(APP_POLL, &stopping);
+            // 还没挂上（App 启动中/init 推迟）轮快一点，挂上后回正常节奏
+            let wait = if d.hooked_pid.load(Ordering::Relaxed) == 0 {
+                Duration::from_secs(5)
+            } else {
+                APP_POLL
+            };
+            sleep_seg(wait, &stopping);
             continue;
         }
         // legacy 通道：端口已在（直接开会话）或 inspector 不可用（静默重启兜底）
