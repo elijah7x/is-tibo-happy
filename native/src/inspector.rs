@@ -18,10 +18,12 @@ pub const PORT: u16 = 9229;
 // pgrep -f 只给候选集：它匹配 argv 任意位置，无关进程 argv 里提到路径也会命中；
 // 且 argv 可被进程自改（setproctitle 伪装）。发 SIGUSR1 前必须用内核报告的
 // proc_pidpath 验明可执行文件真身——SIGUSR1 对非 Node 进程默认动作是终止。
+#[cfg(target_os = "macos")]
 extern "C" {
     fn proc_pidpath(pid: i32, buffer: *mut u8, buffersize: u32) -> i32;
 }
 
+#[cfg(target_os = "macos")]
 fn pid_exe_path(pid: u32) -> Option<PathBuf> {
     let mut buf = [0u8; 4096];
     let n = unsafe { proc_pidpath(pid as i32, buf.as_mut_ptr(), buf.len() as u32) };
@@ -32,6 +34,19 @@ fn pid_exe_path(pid: u32) -> Option<PathBuf> {
     let raw = raw.split(|&b| b == 0).next().unwrap_or(raw);
     let p = PathBuf::from(String::from_utf8_lossy(raw).into_owned());
     std::fs::canonicalize(p).ok()
+}
+
+// Linux 等价物：/proc/<pid>/exe 软链由内核维护，直指可执行文件真身
+// （mirror workflow 在 Linux 上构建同一 crate 跑 fetch-state，链接必须过）
+#[cfg(target_os = "linux")]
+fn pid_exe_path(pid: u32) -> Option<PathBuf> {
+    std::fs::canonicalize(format!("/proc/{pid}/exe")).ok()
+}
+
+// 其他平台：验不出真身就返回 None → inspector 通道走不通，daemon 退回端口模式
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn pid_exe_path(_pid: u32) -> Option<PathBuf> {
+    None
 }
 
 pub fn main_pid(exe: &Path) -> Option<u32> {
