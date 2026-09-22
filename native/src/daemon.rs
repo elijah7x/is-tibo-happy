@@ -1,10 +1,10 @@
 // is-tibo-happy 主控：启动宿主 → CDP 注入 widget → 抓数据推状态 → 断线自愈。
 //   is-tibo-happy            常驻守护（LaunchAgent 语境）
 //   --once    注入+推一次状态后退出
-//   --no-quit 纯观察者：App 缺席时也不拉起（只等它带着端口出现）
+//   --no-quit App 已运行但没开调试端口时，不自动重启它，直接报错退出
 //   --launch  手动授权：App 没在跑也拉起
 //   --no-update 关闭每日热更新检查
-// 资源纪律：永不打断正在运行的 App（无端口就原地等）；App 缺席时才按授权拉回。
+// 资源纪律：App 缺席时只在首装/--launch 下拉起（退出不复活）；在跑但没端口则静默重启一次。
 use crate::cdp::{self, Cdp, CdpEvent};
 use crate::net::fetch_forecast;
 use crate::state::{derive, resolve_display, sub_line};
@@ -202,7 +202,6 @@ struct Daemon {
     cache: Mutex<Value>, // {state, at} 或 Null
     cache_file: PathBuf,
     first_flag: PathBuf,
-    activated: PathBuf, // 标记文件：widget 首次成功注入后存在——授权守护进程在 App 缺席时拉回它
     tz: Option<String>,
 }
 
@@ -316,7 +315,6 @@ impl Daemon {
         }
         *self.last_pushed.lock().unwrap() = String::new(); // 换页/重连后强制重推一次
         self.push();
-        let _ = std::fs::write(&self.activated, b"1"); // 激活凭证：允许 App 缺席时被拉回
         log!("widget injected +avatar");
         Ok(())
     }
@@ -341,20 +339,54 @@ impl Daemon {
         Err("main window target never appeared".into())
     }
 
-    // 返回 true = 调试端口可用。从不打断正在运行的 App——没有端口就原地等，
-    // 重启时机交回用户：用户自己退出 Codex 后，由下方 absence→spawn 用带端口参数拉回
-    fn ensure_app(&self, launch_if_absent: bool) -> bool {
+    // 返回 true = 调试端口可用。App 在跑但没端口 → 静默退出再以带端口参数拉起
+    // （pkill 信号，不走 Apple Events，无授权弹窗）；launch_if_absent=false 时
+    // App 没在跑就原地等待，不主动拉起。
+    fn ensure_app(&self, launch_if_absent: bool) -> Result<bool, String> {
         if port_up() {
-            return true;
+            return Ok(true);
         }
         if app_running(&self.exe) {
-            return false;
+            if self.no_quit {
+                return Err("app is running without debug port; quit it or drop --no-quit".into());
+            }
+            if !self.cap.lock().unwrap().allowed() {
+                return Ok(false);
+            }
+            log!("app running without debug port; restarting it once");
+            // 信号而非 osascript：Apple Events 会弹"想要控制 Codex"授权框，
+            // 同 uid 进程的信号不需要任何授权——用户不该看到这条提示
+            let _ = run_cmd(
+                "pkill",
+                &["-TERM", "-f", &self.exe.to_string_lossy()],
+                Duration::from_secs(5),
+            );
+            for _ in 0..15 {
+                if !app_running(&self.exe) {
+                    break;
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
+            if app_running(&self.exe) {
+                // TERM 没被理（页面挂起等极端情况）→ KILL 兜底，防新旧实例并存
+                let _ = run_cmd(
+                    "pkill",
+                    &["-KILL", "-f", &self.exe.to_string_lossy()],
+                    Duration::from_secs(5),
+                );
+                for _ in 0..5 {
+                    if !app_running(&self.exe) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_secs(1));
+                }
+            }
+            return Ok(spawn_app(&self.exe));
         }
-        // App 缺席：授权条件成立才拉起（首装窗口 / 激活过 / --launch / 非 --no-quit），限速防打架
-        if !launch_if_absent || self.no_quit || !self.cap.lock().unwrap().allowed() {
-            return false;
+        if !launch_if_absent || !self.cap.lock().unwrap().allowed() {
+            return Ok(false);
         }
-        spawn_app(&self.exe)
+        Ok(spawn_app(&self.exe))
     }
 
     // 一轮会话：连上主窗口 → 注入 → 挂到断开为止
@@ -545,7 +577,6 @@ pub fn run(args: &[String]) -> i32 {
         cache: Mutex::new(cache),
         cache_file,
         first_flag: dir.join(".first-run"),
-        activated: dir.join(".activated"),
         tz: iana_time_zone::get_timezone().ok(),
     });
 
@@ -562,20 +593,19 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     let mut session_fails = 0u32;
-    let mut wait_logged = false;
     let d = daemon.clone();
     while !stopping.load(Ordering::Relaxed) {
-        // 缺席拉起授权：安装窗口（first-run 标记）/ 曾经激活过（activated 标记）/ --launch。
-        // 运行中没端口的 App 永不打扰——等用户自己退出，我们再把它带回来。
-        let may_launch = force_launch || d.first_flag.exists() || d.activated.exists();
-        let up = d.ensure_app(may_launch);
+        // 仅"安装后首跑"（标记文件存在）或 --launch 时允许在 App 缺席时拉起；
+        // 之后用户退出 App 就只等不拉（缺席拉起 = 用户退出后它自己又弹回来，太打扰）
+        let may_launch = force_launch || d.first_flag.exists();
+        let mut up = false;
+        match d.ensure_app(may_launch) {
+            Ok(v) => up = v,
+            Err(e) => log!("ensureApp: {e}"),
+        }
         if !up {
             if once {
                 break;
-            }
-            if !wait_logged && app_running(&d.exe) {
-                log!("app running without debug port — waiting for the user's next Codex restart (no forced quit)");
-                wait_logged = true;
             }
             thread::sleep(APP_POLL);
             continue;

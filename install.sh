@@ -52,11 +52,10 @@ launchctl print "gui/$(id -u)/com.istibohappy.daemon" >/dev/null 2>&1 \
 
 cat <<'DONE'
 
-✓ 安装完成，后台服务已启动。
+✓ 安装完成，后台服务已启动，无需任何手动操作。
 
-  · Codex 没在运行 → 已自动为你打开，Tibo 立即可见
-  · Codex 正在运行 → 不会被打扰：下次你重启 Codex 后 Tibo 自动生效
-    （想现在就用：⌘Q 退出一次，约 30 秒内它会带着 Tibo 自己回来）
+  若 Codex（ChatGPT.app）正在运行，它会被静默重启一次以挂载调试端口
+  —— 对话内容不会丢失，这是唯一一次打扰。
 
   打开侧栏底部账号菜单即可看到 Tibo。
   卸载: curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninstall.sh | bash
