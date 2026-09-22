@@ -1,6 +1,6 @@
 [package]
 name = "is-tibo-happy"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "Tiny Codex companion: pixel avatar in the account menu reporting public reset signals"
 license = "MIT"
