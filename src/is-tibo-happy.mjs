@@ -6,9 +6,10 @@
 import { listTargets, getVersion, connect, evalJs } from './cdp.mjs';
 import { derive, subLine, resolveDisplay } from './state.mjs';
 import { fetchForecast } from './net.mjs';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, statSync, truncateSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync, existsSync, statSync, truncateSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import os from 'node:os';
 
 const PORT = 9333;
@@ -25,7 +26,8 @@ const RELAUNCH_WINDOW_MS = 3600e3;
 const ONCE = process.argv.includes('--once');
 const NO_QUIT = process.argv.includes('--no-quit');
 const FORCE_LAUNCH = process.argv.includes('--launch');   // 手动授权：App 没在跑也拉起
-const PIDFILE = fileURLToPath(new URL('../is-tibo-happy.pid', import.meta.url));
+// 锁文件固定在安装目录：仓库 checkout 与安装版共用一把锁，防双实例同时推（审计 🟡-2）
+const PIDFILE = `${os.homedir()}/Library/Application Support/is-tibo-happy/is-tibo-happy.pid`;
 const LOGFILE = fileURLToPath(new URL('../daemon.log', import.meta.url));
 const CACHE_FILE = fileURLToPath(new URL('../state-cache.json', import.meta.url));
 // 安装器落的一次性标记：只在装后第一次运行时允许拉起 App（装完即生效），
@@ -38,12 +40,13 @@ const log = (...a) => console.log('[is-tibo-happy]', ...a);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function acquireLock() {
+  mkdirSync(dirname(PIDFILE), { recursive: true });
   if (existsSync(PIDFILE)) {
     const pid = +readFileSync(PIDFILE, 'utf8').trim();
     if (pid) {
       // pid 可能被无关进程复用 → 校验进程身份确实是本守护进程
       let ours = false;
-      try { ours = /node\S*\s+.*is-tibo-happy\.mjs(\s|$)/.test(execSync(`ps -p ${pid} -o args=`).toString()); } catch {}
+      try { ours = /node\S*\s+.*is-tibo-happy\.mjs(\s|$)/.test(execSync(`ps -p ${pid} -o args=`, { timeout: 5000 }).toString()); } catch {}
       if (ours) { console.error(`[is-tibo-happy] already running (pid ${pid})`); process.exit(1); }
     }
   }
@@ -53,7 +56,7 @@ function acquireLock() {
 
 const portUp = () => getVersion(PORT).then(() => true).catch(() => false);
 const appRunning = () => {
-  try { return execSync(`pgrep -f "${EXE}"`).toString().trim().length > 0; }
+  try { return execSync(`pgrep -f "${EXE}"`, { timeout: 5000 }).toString().trim().length > 0; }
   catch { return false; }
 };
 
@@ -91,7 +94,7 @@ async function ensureApp({ launchIfAbsent = false } = {}) {
     if (NO_QUIT) throw new Error('app is running without debug port; quit it or drop --no-quit');
     if (!relaunchAllowed()) return false;
     log('app running without debug port; restarting it once');
-    try { execSync(`osascript -e 'quit app "ChatGPT"'`); } catch {}
+    try { execSync(`osascript -e 'quit app "ChatGPT"'`, { timeout: 5000 }); } catch {}
     for (let i = 0; i < 15 && appRunning(); i++) await sleep(1000);
     return spawnApp();
   }
@@ -135,7 +138,7 @@ async function fetchState() {
   const r = resolveDisplay(fresh, cache);
   if (r.cache !== cache) {
     cache = r.cache;
-    try { writeFileSync(CACHE_FILE, JSON.stringify(cache)); } catch {}
+    try { writeFileSync(`${CACHE_FILE}.tmp`, JSON.stringify(cache)); renameSync(`${CACHE_FILE}.tmp`, CACHE_FILE); } catch {}
   }
   return r.state;
 }
@@ -164,6 +167,7 @@ async function main() {
   process.on('SIGTERM', shutdown);
 
   let active = null;        // 当前活的 CDP 连接（断开期间为 null）
+  let sessionFails = 0;     // 连续"未能建立会话"次数 → 退避重连（宿主契约失效时防死循环刷屏）
   let lastPushed = '';      // 推态去重（白名单键，剔除 daysSince 等易变字段）
   let injected = false;
   let pushing = false;      // push 防重入
@@ -234,6 +238,7 @@ async function main() {
       push().catch(e => log('menu refresh failed:', e.message));
     });
     await inject(cdp);
+    sessionFails = 0;        // 会话真正建立过 → 之后断开属正常断线，退避归零
     cdp.on('Page.frameNavigated', (f) => {
       if (f.frame?.parentId) return;
       injected = false;
@@ -278,7 +283,15 @@ async function main() {
     try {
       await session();
     }
-    catch (e) { log('session failed:', e.message); }
+    catch (e) {
+      sessionFails++;
+      // 连续建不起会话（端口被占/宿主改版/注入失败）→ 指数退避，3s 起封顶 15min
+      const delay = Math.min(RECONNECT_MS * 2 ** (sessionFails - 1), 15 * 60e3);
+      log(`session failed (x${sessionFails}):`, e.message, `— retry in ${Math.round(delay / 1000)}s`);
+      if (ONCE || stopping) break;
+      await sleep(delay);
+      continue;
+    }
     if (ONCE || stopping) break;
     await sleep(RECONNECT_MS);
   }

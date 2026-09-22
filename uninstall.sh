@@ -15,6 +15,7 @@ APP=""
 for p in "/Applications/ChatGPT.app" "$HOME/Applications/ChatGPT.app"; do
   [ -d "$p" ] && APP="$p" && break
 done
+PORT_CLOSED=1
 if [ -n "$APP" ] && pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null; then
   echo "▸ 重启 Codex 以关闭调试端口（对话记录不会丢失）"
   osascript -e 'quit app "ChatGPT"' 2>/dev/null || true
@@ -22,9 +23,17 @@ if [ -n "$APP" ] && pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null; then
     pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null || break
     sleep 1
   done
-  open -a "ChatGPT" 2>/dev/null || true
+  if pgrep -f "$APP/Contents/MacOS/ChatGPT" >/dev/null; then
+    # osascript 被拒/挂起等：别谎报端口已关
+    PORT_CLOSED=0
+    echo "⚠ Codex 未能自动退出——请手动退出一次再打开，调试端口才会关闭"
+  else
+    open -a "ChatGPT" 2>/dev/null || true
+  fi
 fi
 
-cat <<'DONE'
-✓ 已卸载（后台服务停止 + 文件移除 + 调试端口已随 App 重启关闭）。
-DONE
+if [ "$PORT_CLOSED" = 1 ]; then
+  echo "✓ 已卸载（后台服务停止 + 文件移除 + 调试端口已关闭）。"
+else
+  echo "✓ 已卸载（后台服务停止 + 文件移除；调试端口待 Codex 手动重启后关闭）。"
+fi

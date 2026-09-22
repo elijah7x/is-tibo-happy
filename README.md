@@ -26,6 +26,10 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 That's it. If Codex is running it restarts **once** (no chats lost); then Tibo sits under your name in the bottom-left account menu. Auto-starts on login, re-attaches when Codex restarts.
 
+## Update
+
+Re-run the install command above — it's idempotent, so it just replaces the files and restarts the daemon in place. (There is no auto-updater, on purpose.)
+
 ## Uninstall
 
 ```bash
@@ -58,7 +62,7 @@ If local-process isolation matters to you, don't install.
 ## How it works
 
 ```
-LaunchAgent daemon (idle ≈ 0% CPU, ~40 MB)
+LaunchAgent daemon (idle ≈ 0% CPU, ~50 MB)
   └─ fetches public reset data every 15 min (and on menu open)
   └─ injects one card into the profile menu via CDP — app files untouched
 ```
@@ -103,7 +107,7 @@ The daemon re-attaches automatically. If an UI redesign breaks menu detection, t
 The installer records the current Node absolute path. Deleting or switching that version stops the daemon. `brew install node` is the sturdy option.
 
 **Hack on it?**
-Runtime is 5 dependency-free files in `src/` (~900 lines). `node --test 'test/*.test.mjs'` runs 50 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
+Runtime is 5 dependency-free files in `src/` (~900 lines). `node --test 'test/*.test.mjs'` runs 75 spec tests. Windows/Linux ports welcome — see `install.sh` for what needs reimplementing.
 
 ---
 

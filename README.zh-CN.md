@@ -24,6 +24,10 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 装完即生效：如果 Codex 正在运行，它会**重启一次**（对话不丢）——这是唯一一次打扰。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
 
+## 更新
+
+再跑一次上面的安装命令即可——脚本是幂等的，只会替换文件并就地重启守护进程。（特意没有做自动更新。）
+
 ## 卸载
 
 ```bash
@@ -56,7 +60,7 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 ## 它怎么工作
 
 ```
-后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 40MB 内存）
+后台守护进程（LaunchAgent，空闲 ≈ 0% CPU，约 50MB 内存）
   └─ 每 15 分钟拉一次公开重置数据（打开菜单时也顺手刷新）
   └─ 通过 CDP 往账号菜单注入一张卡片——不改 App 本体
 ```
