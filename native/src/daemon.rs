@@ -498,10 +498,16 @@ pub fn run(args: &[String]) -> i32 {
         tz: iana_time_zone::get_timezone().ok(),
     });
 
-    // 轮询 + 热更新 线程
+    // 轮询 + 热更新 线程。panic = 整个进程退出（exit 1 → launchd KeepAlive 拉起），
+    // 对齐 JS 版"未捕获异常即崩溃重启"的语义——线程悄悄死掉会让守护进程假活。
     {
         let d = daemon.clone();
-        thread::spawn(move || d.poll_loop());
+        thread::spawn(move || {
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| d.poll_loop())).is_err() {
+                eprintln!("[is-tibo-happy] poll thread panicked — exiting for launchd restart");
+                std::process::exit(1);
+            }
+        });
     }
 
     let mut session_fails = 0u32;

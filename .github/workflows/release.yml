@@ -9,6 +9,10 @@ jobs:
     runs-on: macos-latest   # arm64 runner；x86_64 用 target 交叉
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+      - name: tag must match crate version
+        run: |
+          pkg=$(grep '^version' native/Cargo.toml | head -1 | cut -d'"' -f2)
+          [ "$GITHUB_REF_NAME" = "v$pkg" ] || { echo "tag $GITHUB_REF_NAME != crate v$pkg"; exit 1; }
       - name: rust targets + test
         run: |
           rustup target add x86_64-apple-darwin

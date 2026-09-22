@@ -123,9 +123,14 @@ impl Cdp {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let (tx, rx) = mpsc::channel();
         self.pending.lock().unwrap().insert(id, tx);
-        self.outbound
+        if self
+            .outbound
             .send(json!({"id": id, "method": method, "params": params}).to_string())
-            .map_err(|_| "ws outbound closed".to_string())?;
+            .is_err()
+        {
+            self.pending.lock().unwrap().remove(&id); // 发不出去就别留尸
+            return Err("ws outbound closed".to_string());
+        }
         match rx.recv_timeout(timeout) {
             Ok(r) => r,
             Err(_) => {
