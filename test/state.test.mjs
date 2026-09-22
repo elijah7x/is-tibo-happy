@@ -215,6 +215,37 @@ test('commitment beats tease when both present', () => {
   assert.deepEqual(run(j), { kind: 'happy', zh: '5 天后重置', en: 'reset in 5 days' });
 });
 
+// ───────────── E2. 承诺级信号的锚定规则（审计回归：无锚不永生、不滚动） ─────────────
+test('commitment without any parseable time anchor is not a signal (no immortal happy)', () => {
+  const j = { last_reset_at: LAST, commitment: { text: 'reset coming eventually' } };
+  assert.equal(run(j).kind, 'unhappy');
+  assert.equal(run(j, UTC, NOW + 90 * D).kind, 'unhappy');   // 90 天后也不复活
+});
+
+test('official_signal text without post time does not re-anchor "next Tuesday" to now', () => {
+  const j = { last_reset_at: LAST, official_signal: { text: 'by Tuesday' } };
+  assert.equal(run(j).kind, 'unhappy');
+  assert.equal(run(j, UTC, NOW + 90 * D).kind, 'unhappy');   // 无滚动锚：三个月后同样 unhappy
+});
+
+test('official_signal with real posted_at anchors the weekday to the post date', () => {
+  const j = { last_reset_at: LAST, official_signal: { text: 'by Tuesday', posted_at: '2026-09-19T16:48:38.000Z' }, time_window: WINDOW };
+  assert.deepEqual(run(j, LA), { kind: 'happy', zh: '预计周二重置', en: 'reset expected Tuesday' });
+  // 发布超过 7 天 → 信号过期
+  const old = { last_reset_at: LAST, official_signal: { text: 'by Tuesday', posted_at: '2026-09-10T16:48:38.000Z' } };
+  assert.equal(run(old).kind, 'unhappy');
+});
+
+test('non-string quote / display_text never throws', () => {
+  // 上游字段形状异常时 derive 不得抛错——否则守护进程整次拉取判失败，好账本 12h 后退化 OFFLINE
+  const j = { last_reset_at: LAST, tease_signal: tease(42) };
+  assert.deepEqual(run(j), { kind: 'happy', zh: '有重置暗示', en: 'reset hinted' });   // quote 解不出 → hinted（帖子仍新鲜）
+  const hint = { last_reset_at: LAST, latest_hint: { at: '2026-09-19T16:48:38.000Z', quote: { text: 'x' } } };
+  assert.equal(run(hint).kind, 'unhappy');   // hint 必须解出目标才算信号
+  const r = { scheduled: { display_text: { text: 'soon' }, announced_at: '2026-09-19T16:48:38.000Z' }, events: [{ announced_at: LAST }] };
+  assert.equal(run(r).kind, 'unhappy');
+});
+
 // ───────────── F. 窗口制 → 最晚边，本地星期 ─────────────
 test('teased_window end → "by <local weekday of end>"', () => {
   const j = { last_reset_at: LAST, official_signal: { text: 'by Tuesday' }, teased_window: { start: '2026-09-22T23:00:00Z', end: '2026-09-23T02:00:00Z' } };
@@ -233,10 +264,11 @@ test('teased_window alone still counts as a signal; overdue within grace → due
   assert.equal(run(j, LA, dead).kind, 'unhappy');
 });
 
-test('teased_window with start > end (malformed) → ignore window, fall to text', () => {
+test('teased_window with start > end (malformed) → window dropped; anchorless text is not a signal', () => {
   const j = { last_reset_at: LAST, official_signal: { text: 'by Tuesday' }, teased_window: { start: '2026-09-23T02:00:00Z', end: '2026-09-22T23:00:00Z' } };
-  // 窗口非法 → 用文本 Tuesday + 默认窗口 → UTC 周二
-  assert.deepEqual(run(j, UTC), { kind: 'happy', zh: '预计周二重置', en: 'reset expected Tuesday' });
+  // 窗口非法被丢弃后，'by Tuesday' 没有可锚定的发布时间 → 不算信号
+  // （若拿 now 当发布日会"滚动重锚"：每次推导都显示新鲜的"预计周二重置"，永不失效）
+  assert.deepEqual(run(j, UTC), { kind: 'unhappy', zh: '暂无重置预告', en: 'no reset news' });
 });
 
 // ───────────── G. 账本 ─────────────
@@ -265,7 +297,7 @@ test('garbage upstream → offline (not an object) or unhappy (object but underi
   assert.equal(run({ age_days: '8' }).kind, 'unhappy');
   assert.equal(run({ last_reset_at: LAST, tease_signal: 'not-an-object' }).kind, 'unhappy');
   assert.equal(run({ last_reset_at: LAST, tease_signal: { post: null } }).kind, 'unhappy');
-  assert.equal(run({ last_reset_at: LAST, commitment: 'yes' }).kind, 'happy');   // truthy non-object commitment → still a signal
+  assert.equal(run({ last_reset_at: LAST, commitment: 'yes' }).kind, 'unhappy');   // 无时间锚的 commitment 不算信号
   assert.equal(run({ last_reset_at: LAST, time_window: { start_hour: 'x' }, tease_signal: tease('coming in Tuesday') }, SH).zh, '预计周三重置'); // bad window → default
   assert.equal(subLine({ kind: 'offline', detail: {} }, NOW).zh, '数据不可用');
 });
@@ -283,6 +315,13 @@ test('resets shape: scheduled tease → happy with localized weekday', () => {
 test('resets shape: scheduled_for exact → countdown', () => {
   const j = { scheduled: { scheduled_for: iso(NOW + 4 * D), display_text: 'x' }, events: [] };
   assert.deepEqual(run(j), { kind: 'happy', zh: '4 天后重置', en: 'reset in 4 days' });
+});
+
+test('resets shape: bare-string scheduled must parse as a date within grace', () => {
+  assert.deepEqual(run({ scheduled: '2026-09-25T23:00:00.000Z', events: [{ announced_at: LAST }] }),
+    { kind: 'happy', zh: '5 天后重置', en: 'reset in 5 days' });
+  assert.equal(run({ scheduled: 'coming Tuesday', events: [{ announced_at: LAST }] }).kind, 'unhappy');
+  assert.equal(run({ scheduled: '2026-09-15T23:00:00.000Z', events: [{ announced_at: LAST }] }).kind, 'unhappy');
 });
 
 test('resets shape: stale scheduled (announced >48h ago, no scheduled_for) is ignored', () => {

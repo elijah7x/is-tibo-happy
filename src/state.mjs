@@ -19,7 +19,7 @@ const EN_DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // 从预告原文解析目标日 → 'today' | 'tomorrow' | 'weekend' | 0-6（星期几），语言无关
 function parseDayKey(text) {
-  const t = (text || '').toLowerCase();
+  const t = typeof text === 'string' ? text.toLowerCase() : '';
   if (!t) return null;
   if (/\btoday|tonight|end of day|eod\b/.test(t)) return 'today';
   if (/\btomorrow\b/.test(t)) return 'tomorrow';
@@ -98,18 +98,21 @@ export function deriveForecast(apiJson, now = Date.now()) {
   if (commit) {
     const d = {
       confirmed: true,
-      scheduledISO: commit.scheduled_for || commit.at || commit.time || null,
+      scheduledISO: commit.scheduled_for || commit.time || null,
       teaseText: commit.text || commit.quote || commit.display_text || null,
       tweetUrl: commit.url || commit.tweet_url || null,
     };
     setWindow(d, apiJson.teased_window || commit.window);
-    setTarget(d, d.teaseText,
-      Date.parse(commit.at || commit.posted_at || '') || now, apiJson.time_window);
-    const anchor = Date.parse(commit.posted_at || commit.announced_at || '')
-      || Date.parse(d.scheduledISO || '') || Date.parse(d.targetStart || '');
-    const sf = Date.parse(d.scheduledISO || '');
+    const postAt = Date.parse(commit.posted_at || commit.announced_at || commit.at || '');
+    if (Number.isFinite(postAt)) setTarget(d, d.teaseText, postAt, apiJson.time_window);
+    const sf = Date.parse(d.scheduledISO || ''), we = Date.parse(d.windowEnd || '');
+    // 至少要有一个可解析的时间锚才算信号：scheduled_for / 活窗口 / 近 7 天发布；
+    // 全部缺失 = 无从校验的"永生信号"（无锚文本每次推导还会重锚到下一个周二），不算数
+    const anchored = Number.isFinite(sf)
+      || (Number.isFinite(we) && we + LATE_GRACE > now)
+      || (Number.isFinite(postAt) && now - postAt < SIG_MAX_AGE);
     const stale = Number.isFinite(sf) && sf + LATE_GRACE <= now;   // 过点超宽限 = 跳票
-    if (!fulfilled(anchor) && !stale) return { kind: 'happy', detail: d };
+    if (anchored && !stale && !fulfilled(postAt || sf)) return { kind: 'happy', detail: d };
   }
 
   // 2) 暗示级信号：上游 expires_at 失效、72h 新鲜度、目标窗口+迟到宽限，任一存活即算数
@@ -226,7 +229,11 @@ export function deriveState(apiJson, now = Date.now()) {
       }
     }
   } else if (s) {
-    return { kind: 'happy', detail: { teaseText: String(s) } };
+    // scheduled 是裸字符串：只有能解析成时刻且未过宽限才算信号，否则落账本
+    const t = Date.parse(String(s));
+    if (Number.isFinite(t) && t + LATE_GRACE > now && !fulfilled(t)) {
+      return { kind: 'happy', detail: { confirmed: true, scheduledISO: String(s) } };
+    }
   }
 
   const detail = {};
