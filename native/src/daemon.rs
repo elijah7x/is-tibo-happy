@@ -216,6 +216,7 @@ struct Daemon {
     inspector_ok: AtomicBool,
     hooked_pid: AtomicU32, // 已完成 init_page 的宿主主进程 pid
     insp_lock: Mutex<()>,  // 串行化 attach/detach——inspector.close 会误杀并存的另一会话
+    app_seen_at: Mutex<Option<Instant>>, // 首次观察到 App 在跑的时刻——识别"启动中"的 attach 竞态
     last_pushed: Mutex<String>,
     last_fetch_at: Mutex<i64>,
     last_fetch_ok: AtomicBool,
@@ -381,6 +382,18 @@ impl Daemon {
             let (conn, pid) = match inspector::attach(&self.exe) {
                 Ok(v) => v,
                 Err(e) => {
+                    // 同 pid 且刚起 = 启动中竞态，不记 strike；
+                    // pid 没了/换了 = 可能是信号把它杀了（无 handler 的最坏情形）
+                    // ——记 strike 触发降级止损，别拿 SIGUSR1 反复戳它
+                    let young = self
+                        .app_seen_at
+                        .lock()
+                        .unwrap()
+                        .map_or(false, |t| t.elapsed() < Duration::from_secs(120));
+                    if young && inspector::main_pid(&self.exe) == Some(pid) {
+                        log!("inspector attach deferred (app starting): {e}");
+                        return true;
+                    }
                     log!("inspector attach: {e}");
                     return false;
                 }
@@ -400,7 +413,11 @@ impl Daemon {
             }
             inspector::detach(&conn);
             match r {
-                Ok(()) => self.hooked_pid.store(pid, Ordering::Relaxed),
+                Ok(()) => {
+                    self.hooked_pid.store(pid, Ordering::Relaxed);
+                    // 首装授权到此兑现——不消费的话用户每次关 Codex 都会被重新拉起
+                    let _ = std::fs::remove_file(&self.first_flag);
+                }
                 Err(e) => {
                     log!("inspector init deferred: {e}");
                     return true;
@@ -685,6 +702,7 @@ pub fn run(args: &[String]) -> i32 {
         inspector_ok: AtomicBool::new(false),
         hooked_pid: AtomicU32::new(0),
         insp_lock: Mutex::new(()),
+        app_seen_at: Mutex::new(None),
         last_pushed: Mutex::new(String::new()),
         last_fetch_at: Mutex::new(0),
         last_fetch_ok: AtomicBool::new(false),
@@ -718,18 +736,26 @@ pub fn run(args: &[String]) -> i32 {
     while !stopping.load(Ordering::Relaxed) {
         if !app_running(&d.exe) {
             d.hooked_pid.store(0, Ordering::Relaxed);
+            *d.app_seen_at.lock().unwrap() = None;
+            attach_fails = 0; // 缺席期间旧的 attach 失败一并作废
             // App 缺席：仅"安装后首跑"（标记文件）或 --launch 授权才拉起；
             // 之后用户退出就只等不拉（缺席拉起 = 退出后它自己又弹回来，太打扰）
             let may_launch = force_launch || d.first_flag.exists();
-            if may_launch && d.cap.lock().unwrap().allowed() {
-                // inspector 可用就无端口拉起（攻击面最小）；不可用才带端口走 legacy
-                let _ = spawn_app(&d.exe, !d.inspector_ok.load(Ordering::Relaxed));
+            if may_launch && d.cap.lock().unwrap().allowed() && spawn_app(&d.exe, !d.inspector_ok.load(Ordering::Relaxed)) {
+                // 首装授权已兑现为一次拉起——消费掉，此后缺席永不再拉
+                let _ = std::fs::remove_file(&d.first_flag);
             }
             if once {
                 break;
             }
             sleep_seg(APP_POLL, &stopping);
             continue;
+        }
+        {
+            let mut seen = d.app_seen_at.lock().unwrap();
+            if seen.is_none() {
+                *seen = Some(Instant::now());
+            }
         }
         // 端口没在且 inspector 可用 → SIGUSR1 附加通道，绝不重启进程
         if d.prefer_inspector() && d.inspector_ok.load(Ordering::Relaxed) {
