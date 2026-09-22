@@ -2,7 +2,7 @@
 // now 固定为 2026-09-20T12:00:00Z（周日）。时区通过 subLine 的 tz 选项显式传入，不依赖系统 TZ。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, deriveForecast, deriveState, subLine, resolveDisplay } from '../src/state.mjs';
+import { derive, deriveForecast, deriveState, subLine, resolveDisplay, parseBetteropc } from '../src/state.mjs';
 
 const NOW = Date.parse('2026-09-20T12:00:00Z');   // Sunday
 const H = 3600e3, D = 86400e3;
@@ -424,4 +424,80 @@ test('resolveDisplay: cached state is re-worded for "now" (relative words must n
   // 账龄型也要随时间走：缓存时 2.5 天，10 小时后仍 2 天；再过 1 天 → 3.9 天 → 仍沿用缓存但副行不撒谎
   const l = derive({ last_reset_at: iso(NOW - 2.5 * D) }, NOW); l.detail.sub = subLine(l, NOW);
   assert.equal(resolveDisplay(null, { state: l, at: NOW }, NOW + 10 * H).state.detail.sub.zh, '上次重置 2 天前');
+});
+
+// ───────────── M. 第一信源 betteropc.com：HTML → 归一化 forecast ─────────────
+// 真实页面结构精简夹具：DOM data-* 与 RSC 转义 props（\"k\":\"v\"）两种形态都在。
+// targetIso 全页唯一（仅排期卡倒计时组件持有），scheduled_for 是 UTC 绝对时刻。
+const BP = (o = {}) => `<!doctype html><html><head><title>Codex 重置信号监控</title></head><body>
+<div class="product-tracking-reset-overview-row"><span data-reset-today-status="${o.today ?? 'none'}" data-reset-today-date="2026-09-22" data-product-updated-at="2026-09-22T02:08:25.309Z">今日无重置</span>
+<time class="product-tracking-last-confirmed-reset" dateTime="${o.last ?? '2026-09-12T08:09:17.000Z'}"></time></div>
+${o.card === null ? '' : `<li class="product-tracking-scheduled-reset"><span data-signal-reset-status="${o.status ?? 'scheduled'}">已排期</span><a href="https://x.com/thsottiaux/status/2101352781219258527"></a></li>`}
+<script>self.__next_f.push([1,"{\\"targetIso\\":\\"${o.sf ?? '2026-09-22T07:00:00.000Z'}\\",\\"publishedAtIso\\":\\"${o.pa ?? '2026-09-19T16:48:38.000Z'}\\"}"])</script>
+</body></html>`;
+const runBp = (o, tz = UTC, now) => { const s = derive(parseBetteropc(BP(o)), now); return { kind: s.kind, ...subLine(s, now, { tz }) }; };
+
+test('betteropc: parses DOM + RSC payload into normalized forecast shape', () => {
+  const p = parseBetteropc(BP());
+  assert.equal(p.source, 'betteropc');
+  assert.equal(p.last_reset_at, '2026-09-12T08:09:17.000Z');
+  assert.equal(p.updated_at, '2026-09-22T02:08:25.309Z');
+  assert.deepEqual(p.today, { status: 'none', date: '2026-09-22' });
+  assert.equal(p.commitment.scheduled_for, '2026-09-22T07:00:00.000Z');
+  assert.equal(p.commitment.posted_at, '2026-09-19T16:48:38.000Z');
+  assert.equal(p.commitment.url, 'https://x.com/thsottiaux/status/2101352781219258527');
+});
+
+test('betteropc: 07:00Z target is TODAY for mainland China (the 15:00 Beijing fix)', () => {
+  // 2026-09-22T07:00Z = 北京 15:00。北京 12:00 时还有 3h → 倒计时落在"今天"
+  const now = Date.parse('2026-09-22T04:00:00Z');
+  assert.deepEqual(runBp({}, SH, now), { kind: 'happy', zh: '3 小时后重置', en: 'reset in ~3h' });
+  // UTC 08:00（北京 16:00，刚过点）→ 传播窗口内"即将重置"；更久 → 迟到中
+  assert.deepEqual(runBp({}, SH, Date.parse('2026-09-22T08:00:00Z')), { kind: 'happy', zh: '即将重置', en: 'reset imminent' });
+  assert.deepEqual(runBp({}, SH, Date.parse('2026-09-22T20:00:00Z')), { kind: 'happy', zh: '随时重置', en: 'reset any time now' });
+});
+
+test('betteropc: scheduled_for stale (>36h grace) → falls to ledger', () => {
+  const now = Date.parse('2026-09-24T12:00:00Z');   // 07:00Z 9/22 + 36h 已过
+  assert.deepEqual(runBp({}, UTC, now), { kind: 'unhappy', zh: '暂无重置预告', en: 'no reset news' });
+});
+
+test('betteropc: reset landed (last_reset_at updated past posted_at) → fulfilled → just reset', () => {
+  const now = Date.parse('2026-09-22T08:00:00Z');
+  const s = derive(parseBetteropc(BP({ last: '2026-09-22T07:05:00.000Z' })), now);
+  assert.equal(s.kind, 'happy');
+  assert.deepEqual(subLine(s, now, { tz: SH }), { zh: '刚刚重置', en: 'just reset' });
+});
+
+test('betteropc: terminal/negative card status is not a live signal', () => {
+  for (const status of ['executed', 'cancelled', 'missed', 'done']) {
+    const now = Date.parse('2026-09-22T04:00:00Z');
+    assert.equal(runBp({ status }, UTC, now).kind, 'unhappy');
+  }
+});
+
+test('betteropc: no scheduled card → ledger only; missing pieces degrade gracefully', () => {
+  const now = Date.parse('2026-09-22T04:00:00Z');
+  assert.equal(runBp({ card: null }, UTC, now).kind, 'unhappy');          // 无卡 + 老账本 → unhappy
+  const fresh = runBp({ card: null, last: '2026-09-22T02:00:00.000Z' }, UTC, now);
+  assert.deepEqual(fresh, { kind: 'happy', zh: '刚刚重置', en: 'just reset' });   // 无卡但刚重置过
+  // targetIso 变形但发布时刻仍新鲜 → 近 7 天发布锚定，按"已预告"算活信号
+  assert.deepEqual(runBp({ sf: 'not-a-date' }, UTC, now), { kind: 'happy', zh: '已预告重置', en: 'reset announced' });
+  // targetIso 与发布时间都不可解析 → 无锚，不算信号
+  assert.equal(runBp({ sf: 'not-a-date', pa: '' }, UTC, now).kind, 'unhappy');
+  // publishedAtIso 缺失 → scheduled_for 独自锚定，仍有效
+  assert.equal(runBp({ pa: '' }, UTC, now).kind, 'happy');
+});
+
+test('betteropc: garbage inputs → null (caller treats as fetch failure), never throws', () => {
+  assert.equal(parseBetteropc('<html>just a moment</html>'), null);
+  assert.equal(parseBetteropc(''), null);
+  assert.equal(parseBetteropc(null), null);
+  assert.equal(parseBetteropc(42), null);
+  assert.equal(parseBetteropc('{}'), null);
+  // 别的产品页（URL 改版/重定向到 claude-code 等）同样带 product-tracking-* 标记 → 必须拒收
+  assert.equal(parseBetteropc(BP().replaceAll('Codex', 'Claude Code')), null);
+  // 标记还在但可推导字段全缺（结构改版）→ null 走降级链，不伪装成"无预告"
+  const shell = '<title>Codex</title><div class="product-tracking-x" data-reset-today-status="none"></div>';
+  assert.equal(parseBetteropc(shell), null);
 });

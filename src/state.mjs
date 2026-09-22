@@ -256,6 +256,44 @@ export function derive(upstream, now = Date.now()) {
   return { kind: 'offline', detail: {} };
 }
 
+// ── 第一信源 betteropc.com：HTML 页面 → 归一化 forecast 形状 ──
+// 无公开 JSON API，只读页面自带的机器可读字段（DOM data-* 与 RSC props 同源重复）：
+//   .product-tracking-last-confirmed-reset[dateTime]   最近确认重置（UTC 绝对时刻）
+//   .product-tracking-scheduled-reset 卡 + targetIso/publishedAtIso   下一次重置（作者给的明确时刻）
+//   [data-reset-today-status/date]                     当日状态（北京口径，仅记录不驱动情绪）
+// 归一化后走 deriveForecast，倒计时/迟到宽限/兑现让位/锚定规则全部复用。
+const BP_ATTR = name => new RegExp(name + '["\'\\\\:= ]+([^"\'\\\\,}]+)');
+export function parseBetteropc(html) {
+  // 守卫：必须像 betteropc 的 Codex 产品页。若 URL 被改版重定向到别的产品，
+  // product-tracking-* 标记照样存在——宁可判失败走降级链，也不能拿别家的排期
+  if (typeof html !== 'string' || !html.includes('product-tracking-') || !html.includes('Codex')) return null;
+  const attr = (name, seg = html) => seg.match(BP_ATTR(name))?.[1] ?? null;
+  const out = { source: 'betteropc', updated_at: attr('data-product-updated-at') };
+  const ts = attr('data-reset-today-status');
+  if (ts) out.today = { status: ts, date: attr('data-reset-today-date') };
+  const li = html.indexOf('product-tracking-last-confirmed-reset');
+  out.last_reset_at = li >= 0 ? attr('dateTime', html.slice(li, li + 400)) : null;
+  // 已排期重置卡：targetIso 仅该卡的倒计时组件持有；状态为终态/负态时不算活信号
+  // （已执行由 last_reset_at 账本接住，取消/错过则视同无信号）
+  const sf = attr('targetIso'), si = html.indexOf('product-tracking-scheduled-reset');
+  if (sf && si >= 0) {
+    const seg = html.slice(si, si + 2000);
+    const status = attr('data-signal-reset-status', seg);
+    if (!/cancel|missed|fail|executed|confirmed|done|landed|expired/i.test(status || '')) {
+      out.commitment = {
+        scheduled_for: sf,
+        posted_at: attr('publishedAtIso'),
+        url: seg.match(/x\.com\/[A-Za-z0-9_]+\/status\/\d+/)?.[0] ?? null,
+        text: 'scheduled reset',
+      };
+      if (out.commitment.url) out.commitment.url = 'https://' + out.commitment.url;
+    }
+  }
+  // 至少要有一个可推导字段：标记还在但内容结构改版时，返回 null 走降级链，
+  // 不把"什么都没解析到"伪装成"无重置预告"（也防止镜像写出空信封阻断 JSON 兜底）
+  return (out.last_reset_at || out.commitment) ? out : null;
+}
+
 // 副行文案（双语：产出 {zh, en}，widget 按界面语言挑选）
 // 星期/今天/明天一律在用户本地时区判定；目标时刻是 UTC 窗口起点。
 

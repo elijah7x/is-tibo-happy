@@ -72,7 +72,7 @@ LaunchAgent daemon (idle ≈ 0% CPU, ~40 MB)
 
 ```
 GitHub Actions mirrors the source every 20 min → public/state.json
-client: GitHub raw → jsDelivr (China-reachable) → codex-reset.com → codex-resets.com
+client: betteropc.com → GitHub raw → jsDelivr (China-reachable) → codex-reset.com → codex-resets.com
 ```
 
 The source sites only ever see one polite cron job. Four fallback tiers, all timeout-bounded. The last good state is cached on disk and survives restarts — OFFLINE only appears after **12 hours** without any data.
@@ -107,4 +107,4 @@ Runtime is 5 dependency-free files in `src/` (~900 lines). `node --test 'test/*.
 
 ---
 
-Data: [codex-reset.com](https://codex-reset.com) (primary) · [codex-resets.com](https://codex-resets.com) (backup) — thanks for the public data.
+Data: [betteropc.com](https://betteropc.com/ai-products/reset-signals/codex) (primary) · [codex-reset.com](https://codex-reset.com) · [codex-resets.com](https://codex-resets.com) (fallbacks) — thanks for the public data.

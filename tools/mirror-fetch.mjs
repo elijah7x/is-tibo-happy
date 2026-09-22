@@ -1,10 +1,11 @@
-// GitHub Actions 定时任务：抓 codex-reset.com → 归一化信封写进 public/state.json。
-// 源站按 IP/ASN 拦截数据中心（Actions runner 直连 403，换 UA 无效），
-// 所以顺序是：直连 → 备用直连 → r.jina.ai 中继（runner 上可达）→ 中继备用。
+// GitHub Actions 定时任务：抓第一信源 betteropc.com（HTML→归一化）→ 信封写进 public/state.json。
+// betteropc 失败时回退 JSON 链：codex-reset.com 直连 → 备用直连 → r.jina.ai 中继 → 中继备用
+// （codex-reset 按 IP/ASN 拦数据中心，runner 上靠中继可达）。
 // 源站永远只看到定时任务这一个访问者，客户端走 GitHub raw / jsDelivr CDN。
 // 用法：在仓库根目录 node tools/mirror-fetch.mjs
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { mirrorEnvelope, SOURCES } from '../src/net.mjs';
+import { parseBetteropc } from '../src/state.mjs';
 
 const UA = 'is-tibo-happy-mirror/0.1 (+https://github.com/elijah7x/is-tibo-happy)';
 const RELAY = 'https://r.jina.ai/';
@@ -16,6 +17,15 @@ async function getJson(url) {
   });
   if (!r.ok) throw new Error(`${r.status} ${url.split('/')[2]}`);
   return r.json();
+}
+
+async function getText(url) {
+  const r = await fetch(url, {
+    signal: AbortSignal.timeout(20000),
+    headers: { 'User-Agent': UA, 'Accept': 'text/html,*/*;q=0.8' },
+  });
+  if (!r.ok) throw new Error(`${r.status} ${url.split('/')[2]}`);
+  return r.text();
 }
 
 // r.jina.ai 返回 "Title:/URL Source:/Markdown Content:" 封皮 + JSON 正文，按花括号切片
@@ -32,7 +42,14 @@ async function getJsonRelayed(url) {
 }
 
 let upstream, src;
-for (const [url, fn] of [
+// 第一信源：betteropc 产品页（HTML → 归一化 forecast 形状）
+try {
+  const bp = parseBetteropc(await getText(SOURCES.primary));
+  if (bp) { upstream = bp; src = SOURCES.primary; }
+  else console.error('betteropc: page not recognized');
+} catch (e) { console.error(`betteropc failed: ${e.message}`); }
+// 回退：原 JSON 源链
+if (!upstream) for (const [url, fn] of [
   [SOURCES.direct, getJson],
   [SOURCES.backup, getJson],
   [SOURCES.direct, getJsonRelayed],
