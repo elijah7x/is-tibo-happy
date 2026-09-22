@@ -1,20 +1,20 @@
 {
+  "fetched_at": "2026-09-22T07:30:59.018Z",
   "schema": 1,
-  "fetched_at": "2026-09-22T04:19:21.705Z",
   "source_url": "https://betteropc.com/ai-products/reset-signals/codex",
   "upstream": {
-    "source": "betteropc",
-    "updated_at": "2026-09-22T02:08:25.309Z",
-    "today": {
-      "status": "none",
-      "date": "2026-09-22"
+    "commitment": {
+      "posted_at": "2026-09-19T16:48:38.000Z",
+      "scheduled_for": "2026-09-22T10:00:00.000Z",
+      "text": "scheduled reset",
+      "url": "https://x.com/thsottiaux/status/2101352781219258527"
     },
     "last_reset_at": "2026-09-12T08:09:17.000Z",
-    "commitment": {
-      "scheduled_for": "2026-09-22T07:00:00.000Z",
-      "posted_at": "2026-09-19T16:48:38.000Z",
-      "url": "https://x.com/thsottiaux/status/2101352781219258527",
-      "text": "scheduled reset"
-    }
+    "source": "betteropc",
+    "today": {
+      "date": "2026-09-22",
+      "status": "none"
+    },
+    "updated_at": "2026-09-22T02:08:25.309Z"
   }
 }
