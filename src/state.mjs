@@ -191,10 +191,14 @@ export function deriveState(apiJson, now = Date.now()) {
   if (!apiJson || typeof apiJson !== 'object' || !Array.isArray(apiJson.events)) {
     return { kind: 'offline', detail: {} };
   }
-  const times = apiJson.events
-    .map(e => Date.parse(e?.announced_at || ''))
-    .filter(t => Number.isFinite(t));
-  const last = times.length ? Math.max(...times) : NaN;
+  let last = NaN, lastType = null;   // 最近一次事件的 announced_at 与其 reset_type（banked/regular）
+  for (const e of apiJson.events) {
+    const t = Date.parse(e?.announced_at || '');
+    if (Number.isFinite(t) && !(t < last)) {
+      last = t;
+      lastType = typeof e?.reset_type === 'string' ? e.reset_type : null;
+    }
+  }
   // 信号发布时间早于最近事件 → 预告已兑现，让位账本
   const fulfilled = atMs => Number.isFinite(last) && Number.isFinite(atMs) && atMs < last;
 
@@ -237,9 +241,10 @@ export function deriveState(apiJson, now = Date.now()) {
   }
 
   const detail = {};
-  if (!times.length) return { kind: 'unhappy', detail };
+  if (!Number.isFinite(last)) return { kind: 'unhappy', detail };
   detail.lastResetISO = new Date(last).toISOString();
   detail.daysSince = Math.max(0, (now - last) / DAY);
+  detail.resetType = lastType;
 
   return detail.daysSince > UNHAPPY_AFTER_DAYS
     ? { kind: 'unhappy', detail }
@@ -324,8 +329,10 @@ const COPY = {
     days: d => `${d} 天后重置`,
     byDay: dow => `最晚周${CN_DAY[dow]}重置`,
     expect: { today: '预计今天重置', tomorrow: '预计明天重置', dow: d => `预计周${CN_DAY[d]}重置` },
-    announced: '已预告重置', hinted: '有重置暗示', due: '随时重置',
+    announced: '已预告重置', hinted: '有重置暗示',
     justNow: '刚刚重置', ago: d => `上次重置 ${d} 天前`,
+    usageNow: '用量刚重置', usageAgo: d => `用量 ${d} 天前重置`,   // 落地后才细分：直充型用量重置
+    cardNow: '刚发了重置卡', cardAgo: d => `上次发卡 ${d} 天前`,    // 发卡型重置（banked）
     none: '暂无重置预告', offline: '数据不可用',
   },
   en: {
@@ -334,8 +341,10 @@ const COPY = {
     days: d => `reset in ${d} day${d === 1 ? '' : 's'}`,
     byDay: dow => `reset by ${EN_DAY[dow]}`,
     expect: { today: 'reset expected today', tomorrow: 'reset expected tomorrow', dow: d => `reset expected ${EN_DAY[d]}` },
-    announced: 'reset announced', hinted: 'reset hinted', due: 'reset any time now',
+    announced: 'reset announced', hinted: 'reset hinted',
     justNow: 'just reset', ago: d => `last reset ${d}d ago`,
+    usageNow: 'usage just reset', usageAgo: d => `usage reset ${d}d ago`,
+    cardNow: 'card just issued', cardAgo: d => `card issued ${d}d ago`,
     none: 'no reset news', offline: 'data unavailable',
   },
 };
@@ -372,13 +381,13 @@ function subLineIn(lang, { kind, detail }, now, tz) {
           if (h < 48) return C.hours(Math.round(h));
           return C.days(Math.round(h / 24));
         }
-        // 刚过点算"即将"（重置传播需要时间），更久未落地 = 迟到但预告仍有效
-        return now - t < 6 * HOUR ? C.soon : C.due;
+        // 过点未落地一律"即将"：迟到是常态，宽限期内不换个说法吓人
+        return C.soon;
       }
       // 窗口制 → 窗口最晚边的本地星期（hedge 口径，学 codex-reset.com）
       if (detail.windowEnd) {
         const we = Date.parse(detail.windowEnd);
-        if (Number.isFinite(we) && we <= now) return C.due;   // 窗口已过未确认 → 迟到中
+        if (Number.isFinite(we) && we <= now) return C.soon;   // 窗口已过未确认 → 迟到中
         const w = localYMDW(we, tz);
         if (w && w.dow >= 0) return C.byDay(w.dow);
       }
@@ -389,7 +398,7 @@ function subLineIn(lang, { kind, detail }, now, tz) {
         // 已进入预告窗口 → 即将重置
         if (Number.isFinite(te) && ts <= now && now < te) return C.soon;
         // 窗口已过而暗示仍在 → 迟到中，仍算有效信号
-        if (Number.isFinite(te) && te <= now) return C.due;
+        if (Number.isFinite(te) && te <= now) return C.soon;
         const tgt = localYMDW(ts, tz), cur = localYMDW(now, tz), nxt = localYMDW(now + DAY, tz);
         if (tgt && cur && nxt) {
           // 相对词按用户本地日期说：目标窗口落在本地今天/明天就直说，其余报星期
@@ -400,9 +409,12 @@ function subLineIn(lang, { kind, detail }, now, tz) {
       }
       if (detail.confirmed) return C.announced;
       if (detail.teaseTier) return C.hinted;
-      // 近期重置过（无预告的 happy）
-      if (detail.daysSince != null)
+      // 近期重置过（无预告的 happy）：落地后按 reset_type 分开说——发卡 vs 用量直充；未知走通用
+      if (detail.daysSince != null) {
+        if (detail.resetType === 'banked') return detail.daysSince < 1 ? C.cardNow : C.cardAgo(days);
+        if (detail.resetType === 'regular') return detail.daysSince < 1 ? C.usageNow : C.usageAgo(days);
         return detail.daysSince < 1 ? C.justNow : C.ago(days);
+      }
       return C.announced;
     }
     case 'unhappy': return C.none;   // 不数天数：避免与个人订阅自动重置周期混淆
