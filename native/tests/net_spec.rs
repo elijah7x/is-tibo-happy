@@ -91,21 +91,34 @@ const BP_PAGE: &str = "<div data-product-id=\"codex\"><li class=\"product-tracki
     \\\"targetIso\\\":\\\"2026-09-22T07:00:00.000Z\\\"";
 
 #[test]
-fn primary_betteropc_page_parsed() {
+fn primary_resets_json_wins() {
     let hits = Arc::new(Mutex::new(vec![]));
     let base = serve(
-        HashMap::from([("/primary".into(), R::Text(BP_PAGE.into()))]),
+        HashMap::from([("/primary".into(), R::Json(resets()))]),
         hits,
     );
     let (f, via) = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap();
     assert_eq!(via, "primary");
+    assert_eq!(f, resets());
+}
+
+#[test]
+fn backup_betteropc_page_parsed() {
+    // backup 位现在是 betteropc HTML：primary/mirror/direct 全挂后才轮到它
+    let hits = Arc::new(Mutex::new(vec![]));
+    let base = serve(
+        HashMap::from([("/backup".into(), R::Text(BP_PAGE.into()))]),
+        hits,
+    );
+    let (f, via) = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap();
+    assert_eq!(via, "backup");
     assert_eq!(f["source"], "betteropc");
     assert_eq!(f["commitment"]["scheduled_for"], "2026-09-22T07:00:00.000Z");
     assert_eq!(f["last_reset_at"], "2026-09-12T08:09:17.000Z");
 }
 
 #[test]
-fn primary_non_page_falls_to_mirror() {
+fn primary_non_json_falls_to_mirror() {
     let hits = Arc::new(Mutex::new(vec![]));
     let base = serve(
         HashMap::from([
@@ -240,13 +253,13 @@ fn direct_html_falls_to_backup() {
     let base = serve(
         HashMap::from([
             ("/direct".into(), R::Text("<html>redesign</html>".into())),
-            ("/backup".into(), R::Json(resets())),
+            ("/backup".into(), R::Text(BP_PAGE.into())),
         ]),
         hits,
     );
     let (f, via) = fetch_forecast_from(&sources(&base), "ua", now_ms()).unwrap();
     assert_eq!(via, "backup");
-    assert_eq!(f, resets());
+    assert_eq!(f["source"], "betteropc");
 }
 
 #[test]
@@ -255,7 +268,7 @@ fn direct_5xx_to_backup() {
     let base = serve(
         HashMap::from([
             ("/direct".into(), R::Status(503)),
-            ("/backup".into(), R::Json(resets())),
+            ("/backup".into(), R::Text(BP_PAGE.into())),
         ]),
         hits,
     );

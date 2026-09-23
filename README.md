@@ -78,7 +78,7 @@ LaunchAgent daemon (idle ≈ 0% CPU, ~15 MB)
 
 ```
 GitHub Actions mirrors the source every 20 min → public/state.json
-client: betteropc.com → GitHub raw → jsDelivr (China-reachable) → codex-reset.com → codex-resets.com
+client: codex-resets.com → GitHub raw → jsDelivr (China-reachable) → codex-reset.com → betteropc.com
 ```
 
 The source sites only ever see one polite cron job. Four fallback tiers, all timeout-bounded. The last good state is cached on disk and survives restarts — OFFLINE only appears after **12 hours** without any data.
@@ -110,4 +110,4 @@ Runtime is a single Rust binary (`native/`, ~1600 lines); the injected card stay
 
 ---
 
-Data: [betteropc.com](https://betteropc.com/ai-products/reset-signals/codex) (primary) · [codex-reset.com](https://codex-reset.com) · [codex-resets.com](https://codex-resets.com) (fallbacks) — thanks for the public data.
+Data: [codex-resets.com](https://codex-resets.com) (primary — scheduled resets + landed events incl. banked grants) · [codex-reset.com](https://codex-reset.com) · [betteropc.com](https://betteropc.com/ai-products/reset-signals/codex) (fallbacks) — thanks for the public data.

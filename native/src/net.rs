@@ -1,16 +1,17 @@
-// 拉取链：betteropc.com 产品页是第一信源（HTML 解析→归一化 forecast 形状）；
+// 拉取链：codex-resets.com/api/resets 是第一信源——scheduled 预告 + events 落地
+// 记录（含 reset_type:"banked" 发卡，forecast 端点刻意不收）一条响应全覆盖；
 // 其下是 GitHub Actions 镜像（raw → 境内 jsDelivr CDN，每 20min 归一化），
-// 都失败/过期再退 codex-reset.com → codex-resets.com 两个 JSON 源。每一环都有界超时。
-// 返回 (forecast, via)；forecast 一律是对象（betteropc 页面在 fetch 时就地归一化，
-// 不往缓存塞 HTML），交给 derive() 按形状分派。
+// 再退 codex-reset.com forecast JSON，最后 betteropc 页面解析兜底。
+// 每一环都有界超时。返回 (forecast, via)；forecast 一律是对象（betteropc 页面在
+// fetch 时就地归一化，不往缓存塞 HTML），交给 derive() 按形状分派。
 use crate::state::parse_betteropc;
 use serde_json::{json, Value};
 use std::time::Duration;
 
 pub const REPO: &str = "elijah7x/is-tibo-happy";
-pub const SOURCE_PRIMARY: &str = "https://betteropc.com/ai-products/reset-signals/codex";
+pub const SOURCE_PRIMARY: &str = "https://codex-resets.com/api/resets";
 pub const SOURCE_DIRECT: &str = "https://codex-reset.com/api/forecast";
-pub const SOURCE_BACKUP: &str = "https://codex-resets.com/api/resets";
+pub const SOURCE_BACKUP: &str = "https://betteropc.com/ai-products/reset-signals/codex";
 
 // 信源可注入：生产用 default()，测试用本地 stub 服务器替换
 pub struct Sources {
@@ -83,11 +84,8 @@ pub fn fetch_forecast_from(
     now: i64,
 ) -> Result<(Value, &'static str), String> {
     let mut errors: Vec<String> = Vec::new();
-    match get_text(&srcs.primary, ua, Duration::from_secs(12)) {
-        Ok(html) => match parse_betteropc(&html) {
-            Some(bp) => return Ok((bp, "primary")),
-            None => errors.push("betteropc: unrecognized page".into()),
-        },
+    match get_json(&srcs.primary, ua, Duration::from_secs(12)) {
+        Ok(j) => return Ok((j, "primary")),
         Err(e) => errors.push(e),
     }
     for url in &srcs.mirrors {
@@ -101,8 +99,11 @@ pub fn fetch_forecast_from(
         Ok(j) => return Ok((j, "direct")),
         Err(e) => errors.push(e),
     }
-    match get_json(&srcs.backup, ua, Duration::from_secs(15)) {
-        Ok(j) => return Ok((j, "backup")),
+    match get_text(&srcs.backup, ua, Duration::from_secs(12)) {
+        Ok(html) => match parse_betteropc(&html) {
+            Some(bp) => return Ok((bp, "backup")),
+            None => errors.push("betteropc: unrecognized page".into()),
+        },
         Err(e) => errors.push(e),
     }
     Err(format!("all sources failed: {}", errors.join("; ")))

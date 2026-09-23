@@ -606,6 +606,40 @@ fn resets_stale_scheduled_ignored() {
 }
 
 #[test]
+fn resets_banked_landing_does_not_fulfill_regular_scheduled() {
+    // 真事回归（2026-09-22）：regular 预告发布后 banked 发卡落地——发卡是额度补充，
+    // 不兑现那条重置预告，排期倒计时必须继续显示（修复前会被误当"已兑现"吞掉）
+    let j = json!({
+        "scheduled": {"scheduled_for": iso(NOW_MS + 10 * H), "display_text": "x", "announced_at": iso(NOW_MS - 4 * H), "reset_type": "regular"},
+        "events": [{"announced_at": iso(NOW_MS - 2 * H), "reset_type": "banked"}],
+    });
+    assert_eq!(
+        run(&j, UTC, NOW_MS),
+        json!({"kind":"happy","zh":"10 小时后重置","en":"reset in ~10h"})
+    );
+
+    // 对照：常规落地才真正兑现常规预告 → 落账本
+    let j2 = json!({
+        "scheduled": {"scheduled_for": iso(NOW_MS + 10 * H), "display_text": "x", "announced_at": iso(NOW_MS - 4 * H), "reset_type": "regular"},
+        "events": [{"announced_at": iso(NOW_MS - 2 * H), "reset_type": "regular"}],
+    });
+    assert_eq!(
+        run(&j2, UTC, NOW_MS),
+        json!({"kind":"happy","zh":"用量刚重置","en":"usage just reset"})
+    );
+
+    // banked 预告由 banked 落地兑现——类型对齐，不是全账本通吃
+    let j3 = json!({
+        "scheduled": {"scheduled_for": iso(NOW_MS + 10 * H), "display_text": "x", "announced_at": iso(NOW_MS - 4 * H), "reset_type": "banked"},
+        "events": [{"announced_at": iso(NOW_MS - 2 * H), "reset_type": "banked"}],
+    });
+    assert_eq!(
+        run(&j3, UTC, NOW_MS),
+        json!({"kind":"happy","zh":"刚发了重置卡","en":"card just issued"})
+    );
+}
+
+#[test]
 fn resets_ledger_rules_match_forecast() {
     assert_eq!(
         run(

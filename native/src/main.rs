@@ -9,7 +9,8 @@ use is_tibo_happy::{daemon, net, state, update};
 use serde_json::Value;
 use std::time::Duration;
 
-// 镜像任务：betteropc → 直连 JSON → 备用 JSON → r.jina.ai 中继 ×2（codex-reset 拦数据中心 IP）
+// 镜像任务：resets → forecast 两个 JSON 源直连，被拦再走 r.jina.ai 中继
+// （拦数据中心 IP），betteropc 页面最后兜底
 fn fetch_state(args: &[String]) -> i32 {
     const UA: &str = "is-tibo-happy-mirror/0.2 (+https://github.com/elijah7x/is-tibo-happy)";
     const RELAY: &str = "https://r.jina.ai/";
@@ -53,40 +54,40 @@ fn fetch_state(args: &[String]) -> i32 {
 
     let mut upstream: Option<Value> = None;
     let mut src = String::new();
-    match get_text(net::SOURCE_PRIMARY) {
-        Ok(html) => match state::parse_betteropc(&html) {
-            Some(bp) => {
-                src = net::SOURCE_PRIMARY.to_string();
-                upstream = Some(bp);
+    for (url, relay) in [
+        (net::SOURCE_PRIMARY, false),
+        (net::SOURCE_DIRECT, false),
+        (net::SOURCE_PRIMARY, true),
+        (net::SOURCE_DIRECT, true),
+    ] {
+        let r = if relay {
+            get_json_relayed(url)
+        } else {
+            get_json(url)
+        };
+        match r {
+            Ok(j) => {
+                src = url.to_string();
+                upstream = Some(j);
+                break;
             }
-            None => eprintln!("betteropc: page not recognized"),
-        },
-        Err(e) => eprintln!("betteropc failed: {e}"),
+            Err(e) => eprintln!(
+                "{}{} failed: {e}",
+                if relay { "relay " } else { "" },
+                url.split('/').nth(2).unwrap_or(url)
+            ),
+        }
     }
     if upstream.is_none() {
-        for (url, relay) in [
-            (net::SOURCE_DIRECT, false),
-            (net::SOURCE_BACKUP, false),
-            (net::SOURCE_DIRECT, true),
-            (net::SOURCE_BACKUP, true),
-        ] {
-            let r = if relay {
-                get_json_relayed(url)
-            } else {
-                get_json(url)
-            };
-            match r {
-                Ok(j) => {
-                    src = url.to_string();
-                    upstream = Some(j);
-                    break;
+        match get_text(net::SOURCE_BACKUP) {
+            Ok(html) => match state::parse_betteropc(&html) {
+                Some(bp) => {
+                    src = net::SOURCE_BACKUP.to_string();
+                    upstream = Some(bp);
                 }
-                Err(e) => eprintln!(
-                    "{}{} failed: {e}",
-                    if relay { "relay " } else { "" },
-                    url.split('/').nth(2).unwrap_or(url)
-                ),
-            }
+                None => eprintln!("betteropc: page not recognized"),
+            },
+            Err(e) => eprintln!("betteropc failed: {e}"),
         }
     }
     let Some(upstream) = upstream else { return 1 }; // Actions 标红但不提交，上一份 state.json 保留

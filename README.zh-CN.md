@@ -75,7 +75,7 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 
 ```
 GitHub Actions 每 20 分钟抓一次源站 → 存成 public/state.json
-客户端：betteropc.com → GitHub raw → jsDelivr（国内可达）→ codex-reset.com → codex-resets.com
+客户端：codex-resets.com → GitHub raw → jsDelivr（国内可达）→ codex-reset.com → betteropc.com
 ```
 
 源站永远只看到这一个定时任务，装多少人都不会给它增加负担。四级降级、每级都有超时。最近一次好结果会落盘缓存、重启也在——**连续 12 小时**拿不到数据才显示 OFFLINE。
@@ -107,4 +107,4 @@ GitHub Actions 每 20 分钟抓一次源站 → 存成 public/state.json
 
 ---
 
-数据来源：[betteropc.com](https://betteropc.com/ai-products/reset-signals/codex)（主）、[codex-reset.com](https://codex-reset.com)、[codex-resets.com](https://codex-resets.com)（备）。感谢他们。
+数据来源：[codex-resets.com](https://codex-resets.com)（主——排期预告 + 落地记录含 banked 发卡）、[codex-reset.com](https://codex-reset.com)、[betteropc.com](https://betteropc.com/ai-products/reset-signals/codex)（备）。感谢他们。
