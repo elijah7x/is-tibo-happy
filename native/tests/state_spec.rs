@@ -923,6 +923,53 @@ fn resolve_cached_state_reworded_for_now() {
     );
 }
 
+#[test]
+fn resolve_replay_expires_stale_signal() {
+    // B1 回归：缓存带着过期超宽限的 scheduledISO——重放时 kind 不能被
+    // 死信号锁在 happy 播"即将重置"，而死信号本身也要从 detail 摘除
+    let stale = iso(NOW_MS - 40 * H); // 过点 40h > LATE_GRACE 36h
+    let cache = json!({"state": {"kind": "happy", "detail": {
+        "scheduledISO": stale,
+        "lastResetISO": iso(NOW_MS - 9 * D),
+        "sub": {"zh": "即将重置", "en": "reset imminent"},
+    }}, "at": NOW_MS - H});
+    let (r, _) = resolve_display(None, Some(&cache), NOW_MS, Some(UTC));
+    assert_eq!(r["kind"], "unhappy"); // daysSince=9 > 3 → 无信号分支重算
+    assert_eq!(r["detail"]["sub"]["zh"], "暂无重置预告");
+    assert!(r["detail"].get("scheduledISO").is_none());
+
+    // 无账本变体：有信号但已死 → 不能走 passthrough 把 stale sub 原样放行
+    let cache2 = json!({"state": {"kind": "happy", "detail": {
+        "scheduledISO": stale,
+        "sub": {"zh": "即将重置", "en": "reset imminent"},
+    }}, "at": NOW_MS - H});
+    let (r2, _) = resolve_display(None, Some(&cache2), NOW_MS, Some(UTC));
+    assert_eq!(r2["kind"], "unhappy");
+    assert_eq!(r2["detail"]["sub"]["zh"], "暂无重置预告");
+
+    // 对照：信号还活着 → 照旧锁定缓存 kind、按信号重写文案
+    let live = json!({"state": {"kind": "happy", "detail": {
+        "scheduledISO": iso(NOW_MS + 10 * H),
+        "sub": {"zh": "x", "en": "x"},
+    }}, "at": NOW_MS - H});
+    let (r3, _) = resolve_display(None, Some(&live), NOW_MS, Some(UTC));
+    assert_eq!(r3["kind"], "happy");
+    assert_eq!(r3["detail"]["sub"]["zh"], "10 小时后重置");
+}
+
+#[test]
+fn resets_banked_type_case_insensitive() {
+    // B4 回归：上游 reset_type 大小写漂移（"Banked"）也要落到银行重置文案
+    let j = json!({
+        "scheduled": null,
+        "events": [{"announced_at": iso(NOW_MS - 2 * H), "reset_type": "Banked"}],
+    });
+    assert_eq!(
+        run(&j, UTC, NOW_MS),
+        json!({"kind":"happy","zh":"银行重置刚到账","en":"banked reset just landed"})
+    );
+}
+
 // ───────────── M. 第一信源 betteropc.com ─────────────
 struct Bp {
     pid: &'static str,

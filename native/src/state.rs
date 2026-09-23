@@ -547,7 +547,9 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
                     .and_then(|r| r.as_str())
                     .map(String::from);
             }
-            if get(e, "reset_type").and_then(|r| r.as_str()) == Some("banked")
+            if get(e, "reset_type")
+                .and_then(|r| r.as_str())
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("banked"))
                 && last_banked.is_none_or(|l| t >= l)
             {
                 last_banked = Some(t);
@@ -558,8 +560,11 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
         let ledger = if sched_banked { last_banked } else { last };
         matches!(at, Some(a) if ledger.is_some_and(|l| a < l))
     };
-    let sched_banked =
-        |s: &Value| get(s, "reset_type").and_then(|r| r.as_str()) == Some("banked");
+    let sched_banked = |s: &Value| {
+        get(s, "reset_type")
+            .and_then(|r| r.as_str())
+            .is_some_and(|ty| ty.eq_ignore_ascii_case("banked"))
+    };
 
     match get(api, "scheduled") {
         Some(s) if s.is_object() => {
@@ -893,7 +898,12 @@ fn sub_line_in(
             if let Some(ds) = detail.get("daysSince").and_then(|d| d.as_f64()) {
                 let days = ds.floor() as i64;
                 let (just, ago): (&str, Box<dyn Fn(i64) -> String>) =
-                    match detail.get("resetType").and_then(|r| r.as_str()) {
+                    match detail
+                        .get("resetType")
+                        .and_then(|r| r.as_str())
+                        .map(str::to_ascii_lowercase)
+                        .as_deref()
+                    {
                         // 官方叫法 banked reset（ Tibo 原话 "a banked reset" ）
                         Some("banked") => (
                             if zh {
@@ -1024,6 +1034,22 @@ pub fn resolve_display(
     let has_signal = SIGNAL_FIELDS
         .iter()
         .any(|f| detail_v.get(*f).is_some_and(truthy));
+    // 时间锚信号按 derive 同口径过期（+LATE_GRACE）：跳票的预告重放时不能再
+    // 把 kind 锁在缓存值，否则"即将重置"会顶着 daysSince=9 一直播到缓存关闭
+    let live_signal = |f: &str| -> bool {
+        let v = detail_v.get(f);
+        if !v.is_some_and(truthy) {
+            return false;
+        }
+        match f {
+            "scheduledISO" | "windowEnd" => parse_ms(v).is_some_and(|t| t + LATE_GRACE > now),
+            "targetStart" => parse_ms(detail_v.get("targetEnd"))
+                .or_else(|| parse_ms(v))
+                .is_some_and(|t| t + LATE_GRACE > now),
+            _ => true, // teaseTier/confirmed 无时间锚，边界即 12h 缓存龄
+        }
+    };
+    let has_live = SIGNAL_FIELDS.iter().any(|f| live_signal(f));
     if !has_signal && last.is_none() {
         return (s, c.clone());
     }
@@ -1034,7 +1060,7 @@ pub fn resolve_display(
             json!(((now - l) as f64 / DAY as f64).max(0.0)),
         );
     }
-    let kind = if has_signal {
+    let kind = if has_live {
         s.get("kind")
             .and_then(|k| k.as_str())
             .unwrap_or("unhappy")
@@ -1047,6 +1073,16 @@ pub fn resolve_display(
             "unhappy".to_string()
         }
     };
+    // 死信号从 detail 摘除：sub_line 的 happy 分支优先吃 scheduledISO，
+    // 留着过期预告会照样写出"即将重置"
+    for f in SIGNAL_FIELDS {
+        if detail_v.get(*f).is_some_and(truthy) && !live_signal(f) {
+            d2.remove(*f);
+            if *f == "targetStart" {
+                d2.remove("targetEnd");
+            }
+        }
+    }
     let interim = json!({"kind": kind, "detail": Value::Object(d2.clone())});
     d2.insert("sub".into(), sub_line(&interim, now, tz));
     (
