@@ -63,10 +63,14 @@ jobs:
           PY
           SRV=$!
           sleep 1
+          # 先证明假服务器活着：CI 环境可能挂代理 env，--noproxy 强制直连 localhost
+          curl --noproxy '*' -fsS "http://127.0.0.1:48999/releases/latest" | grep -q v99.0.0 || { echo "::error::fake release server not up"; exit 1; }
           INO_BEFORE=$(stat -f %i "$IDIR/is-tibo-happy")
           # 真 daemon 路径跑起来：首轮轮询就检查更新 → 命中假端点 → 换二进制 → exit(1)
-          # （log! 走 stdout，真机上由 launchd StandardOutPath 收成 daemon.log，这里自重定向）
-          HOME=$FH ITH_UPDATE_API="http://127.0.0.1:48999/releases/latest" "$IDIR/is-tibo-happy" > "$FH/daemon.out" 2>&1 &
+          # （log! 走 stdout，真机上由 launchd StandardOutPath 收成 daemon.log，这里自重定向；
+          #   抹掉代理 env——ureq 会吃 ALL_PROXY 之类，localhost 不该走代理）
+          env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
+            HOME=$FH ITH_UPDATE_API="http://127.0.0.1:48999/releases/latest" "$IDIR/is-tibo-happy" > "$FH/daemon.out" 2>&1 &
           D=$!
           for i in $(seq 1 90); do
             grep -q "updated to" "$FH/daemon.out" 2>/dev/null && break
