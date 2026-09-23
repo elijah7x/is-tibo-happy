@@ -42,28 +42,17 @@ jobs:
           WORK=$(mktemp -d)
           cp native/is-tibo-happy "$WORK/is-tibo-happy"
           shasum -a 256 "$WORK/is-tibo-happy" | awk '{print $1"  is-tibo-happy"}' > "$WORK/SHA256SUMS"
-          python3 - "$WORK" <<'PY' &
-          import http.server, json, os, sys
-          os.chdir(sys.argv[1])
-          api = {"tag_name": "v99.0.0", "assets": [
-              {"name": "is-tibo-happy", "browser_download_url": "http://127.0.0.1:48999/is-tibo-happy"},
-              {"name": "SHA256SUMS", "browser_download_url": "http://127.0.0.1:48999/SHA256SUMS"}]}
-          class H(http.server.BaseHTTPRequestHandler):
-              def do_GET(self):
-                  if self.path == '/releases/latest':
-                      b = json.dumps(api).encode()
-                      self.send_response(200); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-                  elif os.path.isfile(self.path.lstrip('/')):
-                      b = open(self.path.lstrip('/'), 'rb').read()
-                      self.send_response(200); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-                  else:
-                      self.send_response(404); self.end_headers()
-              def log_message(self, *a): pass
-          http.server.HTTPServer(('127.0.0.1', 48999), H).serve_forever()
-          PY
+          # 假服务器用 Rust bin 而非 python——runner 上 python 冷启动/防火墙不可靠，
+          # TcpListener loopback 已被 update_spec 测试在同一 runner 上证明可用
+          cargo build --release --manifest-path native/Cargo.toml --bin ith-fake-release
+          native/target/release/ith-fake-release "$WORK" v99.0.0 48999 &
           SRV=$!
-          sleep 1
-          # 先证明假服务器活着：CI 环境可能挂代理 env，--noproxy 强制直连 localhost
+          # 探活带重试+进程存活检查（--noproxy 防 runner 代理 env 劫走 localhost）
+          for i in $(seq 1 30); do
+            curl --noproxy '*' -fsS "http://127.0.0.1:48999/releases/latest" 2>/dev/null | grep -q v99.0.0 && break
+            kill -0 $SRV 2>/dev/null || { echo "::error::fake release server died"; exit 1; }
+            sleep 1
+          done
           curl --noproxy '*' -fsS "http://127.0.0.1:48999/releases/latest" | grep -q v99.0.0 || { echo "::error::fake release server not up"; exit 1; }
           INO_BEFORE=$(stat -f %i "$IDIR/is-tibo-happy")
           # 真 daemon 路径跑起来：首轮轮询就检查更新 → 命中假端点 → 换二进制 → exit(1)
