@@ -907,13 +907,13 @@ fn sub_line_in(
                         // 官方叫法 banked reset（ Tibo 原话 "a banked reset" ）
                         Some("banked") => (
                             if zh {
-                                "银行重置刚到账"
+                                "储备重置刚到账"
                             } else {
                                 "banked reset just landed"
                             },
                             Box::new(move |d| {
                                 if zh {
-                                    format!("上次银行重置 {d} 天前")
+                                    format!("上次储备重置 {d} 天前")
                                 } else {
                                     format!("banked reset {d}d ago")
                                 }

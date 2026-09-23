@@ -609,14 +609,14 @@ fn resets_stale_scheduled_ignored() {
 fn resets_banked_landing_fulfills_regular_scheduled() {
     // 真事回归（2026-09-22）：regular 预告（"reset for Tuesday"）发布后 banked
     // 落地——上游自己把 banked 计入 stats.last_reset_at，它就是那次重置：
-    // 预告兑现，落账本显示银行重置，不再挂着过期倒计时
+    // 预告兑现，落账本显示储备重置，不再挂着过期倒计时
     let j = json!({
         "scheduled": {"scheduled_for": iso(NOW_MS + 10 * H), "display_text": "x", "announced_at": iso(NOW_MS - 4 * H), "reset_type": "regular"},
         "events": [{"announced_at": iso(NOW_MS - 2 * H), "reset_type": "banked"}],
     });
     assert_eq!(
         run(&j, UTC, NOW_MS),
-        json!({"kind":"happy","zh":"银行重置刚到账","en":"banked reset just landed"})
+        json!({"kind":"happy","zh":"储备重置刚到账","en":"banked reset just landed"})
     );
 
     // 反向不成立：banked 预告承诺的是发卡，常规重置落地没给卡 → 预告不兑现
@@ -647,7 +647,7 @@ fn resets_ledger_rules_match_forecast() {
             UTC,
             NOW_MS
         ),
-        json!({"kind":"happy","zh":"银行重置刚到账","en":"banked reset just landed"})
+        json!({"kind":"happy","zh":"储备重置刚到账","en":"banked reset just landed"})
     );
     assert_eq!(
         run(
@@ -655,7 +655,7 @@ fn resets_ledger_rules_match_forecast() {
             UTC,
             NOW_MS
         ),
-        json!({"kind":"happy","zh":"上次银行重置 2 天前","en":"banked reset 2d ago"})
+        json!({"kind":"happy","zh":"上次储备重置 2 天前","en":"banked reset 2d ago"})
     );
     assert_eq!(
         run(
@@ -959,14 +959,14 @@ fn resolve_replay_expires_stale_signal() {
 
 #[test]
 fn resets_banked_type_case_insensitive() {
-    // B4 回归：上游 reset_type 大小写漂移（"Banked"）也要落到银行重置文案
+    // B4 回归：上游 reset_type 大小写漂移（"Banked"）也要落到储备重置文案
     let j = json!({
         "scheduled": null,
         "events": [{"announced_at": iso(NOW_MS - 2 * H), "reset_type": "Banked"}],
     });
     assert_eq!(
         run(&j, UTC, NOW_MS),
-        json!({"kind":"happy","zh":"银行重置刚到账","en":"banked reset just landed"})
+        json!({"kind":"happy","zh":"储备重置刚到账","en":"banked reset just landed"})
     );
 }
 

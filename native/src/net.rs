@@ -1,5 +1,5 @@
 // 拉取链：codex-resets.com/api/resets 是第一信源——scheduled 预告 + events 落地
-// 记录（含 reset_type:"banked" 银行重置，forecast 端点刻意不收）一条响应全覆盖；
+// 记录（含 reset_type:"banked" 储备重置，forecast 端点刻意不收）一条响应全覆盖；
 // 其下是 GitHub Actions 镜像（raw → 境内 jsDelivr CDN，每 20min 归一化），
 // 再退 codex-reset.com forecast JSON，最后 betteropc 页面解析兜底。
 // 每一环都有界超时。返回 (forecast, via)；forecast 一律是对象（betteropc 页面在
