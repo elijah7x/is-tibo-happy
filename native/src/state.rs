@@ -746,7 +746,7 @@ pub fn parse_betteropc(html: &str) -> Option<Value> {
         }
     }
     out["last_reset_at"] = last_reset_at.map(Value::String).unwrap_or(Value::Null);
-    // 已排期重置卡：时刻/状态/链接都取卡片标记之后的第一个（防页面加第二个倒计时组件时
+    // 已排期重置卡位：时刻/状态/链接都取卡片标记之后的第一个（防页面加第二个倒计时组件时
     // 全局首现被抢占）；状态为终态/负态时不算活信号——已执行由账本接住，取消/错过视同无信号
     if let Some(si) = html.find("product-tracking-scheduled-reset") {
         let after = &html[si..];
@@ -897,22 +897,23 @@ fn sub_line_in(
                     "reset hinted".into()
                 };
             }
-            // 近期重置过（无预告的 happy）：落地后按 reset_type 分开说——发卡 vs 用量直充；未知走通用
+            // 近期重置过（无预告的 happy）：落地后按 reset_type 分开说——banked vs 用量直充；未知走通用
             if let Some(ds) = detail.get("daysSince").and_then(|d| d.as_f64()) {
                 let days = ds.floor() as i64;
                 let (just, ago): (&str, Box<dyn Fn(i64) -> String>) =
                     match detail.get("resetType").and_then(|r| r.as_str()) {
+                        // 官方叫法 banked reset（ Tibo 原话 "a banked reset" ）
                         Some("banked") => (
                             if zh {
-                                "刚发了重置卡"
+                                "银行重置刚到账"
                             } else {
-                                "card just issued"
+                                "banked reset just landed"
                             },
                             Box::new(move |d| {
                                 if zh {
-                                    format!("上次发卡 {d} 天前")
+                                    format!("上次银行重置 {d} 天前")
                                 } else {
-                                    format!("card issued {d}d ago")
+                                    format!("banked reset {d}d ago")
                                 }
                             }),
                         ),

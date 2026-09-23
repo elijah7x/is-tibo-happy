@@ -635,7 +635,7 @@ fn resets_banked_landing_does_not_fulfill_regular_scheduled() {
     });
     assert_eq!(
         run(&j3, UTC, NOW_MS),
-        json!({"kind":"happy","zh":"刚发了重置卡","en":"card just issued"})
+        json!({"kind":"happy","zh":"银行重置刚到账","en":"banked reset just landed"})
     );
 }
 
@@ -649,14 +649,14 @@ fn resets_ledger_rules_match_forecast() {
         ),
         json!({"kind":"happy","zh":"上次重置 1 天前","en":"last reset 1d ago"})
     );
-    // 落地后按 reset_type 分开描述：发卡型 vs 用量直充型；未知类型走通用文案
+    // 落地后按 reset_type 分开描述：banked 型 vs 用量直充型；未知类型走通用文案
     assert_eq!(
         run(
             &json!({"events": [{"announced_at": iso(NOW_MS - D / 2), "reset_type": "banked"}]}),
             UTC,
             NOW_MS
         ),
-        json!({"kind":"happy","zh":"刚发了重置卡","en":"card just issued"})
+        json!({"kind":"happy","zh":"银行重置刚到账","en":"banked reset just landed"})
     );
     assert_eq!(
         run(
@@ -664,7 +664,7 @@ fn resets_ledger_rules_match_forecast() {
             UTC,
             NOW_MS
         ),
-        json!({"kind":"happy","zh":"上次发卡 2 天前","en":"card issued 2d ago"})
+        json!({"kind":"happy","zh":"上次银行重置 2 天前","en":"banked reset 2d ago"})
     );
     assert_eq!(
         run(
