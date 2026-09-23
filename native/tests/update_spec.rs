@@ -88,15 +88,35 @@ fn tmp_exe() -> PathBuf {
     p
 }
 
-struct ApiGuard;
+// 清掉代理 env：ureq 会吃 ALL_PROXY/http_proxy 之类，CI runner 上这些变量
+// 时有时无，挂着时 loopback 请求被劫去代理导致 EINVAL/超时（门禁曾因此挂过）。
+const PROXY_VARS: [&str; 8] = [
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+];
+
+struct ApiGuard(Vec<(&'static str, Option<String>)>);
 impl Drop for ApiGuard {
     fn drop(&mut self) {
         std::env::remove_var("ITH_UPDATE_API");
+        for (k, v) in self.0.drain(..) {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 }
 fn use_api(base: &str) -> ApiGuard {
+    let saved = PROXY_VARS
+        .iter()
+        .map(|k| (*k, std::env::var(k).ok()))
+        .collect::<Vec<_>>();
+    for k in PROXY_VARS {
+        std::env::remove_var(k);
+    }
     std::env::set_var("ITH_UPDATE_API", format!("{base}/releases/latest"));
-    ApiGuard
+    ApiGuard(saved)
 }
 
 #[test]

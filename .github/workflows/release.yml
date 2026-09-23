@@ -16,6 +16,8 @@ jobs:
       - name: rust targets + test
         run: |
           rustup target add x86_64-apple-darwin
+          # 诊断：ureq 会吃代理 env，loopback 被劫会导致 EINVAL/超时
+          env | grep -i proxy || echo "no proxy vars"
           cargo test --locked --manifest-path native/Cargo.toml
       - name: build universal2
         run: |
