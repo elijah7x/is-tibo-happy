@@ -68,7 +68,9 @@ jobs:
             kill -0 $D 2>/dev/null || break
             sleep 1
           done
-          kill $D 2>/dev/null; wait $D 2>/dev/null; kill $SRV 2>/dev/null
+          # daemon 换完二进制按设计 exit(1)（launchd 语义），wait 会把 1 传出来——
+          # set -e 下必须吃掉，否则断言还没跑步骤就死
+          kill $D 2>/dev/null; wait $D 2>/dev/null || true; kill $SRV 2>/dev/null || true
           # 三重断言：日志记录升级、inode 证明 rename 发生、落地二进制能过自检
           grep -q "updated to v99.0.0" "$FH/daemon.out" || { echo "::error::forward-update failed"; cat "$FH/daemon.out"; exit 1; }
           [ "$(stat -f %i "$IDIR/is-tibo-happy")" != "$INO_BEFORE" ] || { echo "::error::binary not swapped"; exit 1; }
