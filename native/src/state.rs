@@ -534,9 +534,10 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
     };
     let mut last: Option<i64> = None;
     let mut last_type: Option<String> = None; // 最近一次事件的 reset_type（banked/regular）
-    // 兑现账本按类型分册：banked 发卡是额度补充，不是那个"regular 重置预告"落地——
-    // 发卡发生在预告之后不该吞掉还在 pending 的排期
-    let mut last_regular: Option<i64> = None;
+    // banked 落地单独记一册：它兑现"banked 预告"，但反向不成立——
+    // regular/无类型预告承诺的是"一次重置"，banked 落地就是重置（上游
+    // stats.last_reset_at 同样计它），任意落地都兑现；而"banked 预告"
+    // 承诺的是发卡，常规重置落地没给卡，不能算兑现
     let mut last_banked: Option<i64> = None;
     for e in events {
         if let Some(t) = parse_ms(get(e, "announced_at")) {
@@ -546,24 +547,15 @@ pub fn derive_state(api: &Value, now: i64) -> Value {
                     .and_then(|r| r.as_str())
                     .map(String::from);
             }
-            let banked = get(e, "reset_type").and_then(|r| r.as_str()) == Some("banked");
-            let slot = if banked {
-                &mut last_banked
-            } else {
-                &mut last_regular
-            };
-            if slot.is_none_or(|l| t >= l) {
-                *slot = Some(t);
+            if get(e, "reset_type").and_then(|r| r.as_str()) == Some("banked")
+                && last_banked.is_none_or(|l| t >= l)
+            {
+                last_banked = Some(t);
             }
         }
     }
-    // 预告兑现按类型对齐：banked 预告只看 banked 落地，其他/无类型只看常规落地
     let fulfilled = |at: Option<i64>, sched_banked: bool| {
-        let ledger = if sched_banked {
-            last_banked
-        } else {
-            last_regular
-        };
+        let ledger = if sched_banked { last_banked } else { last };
         matches!(at, Some(a) if ledger.is_some_and(|l| a < l))
     };
     let sched_banked =
