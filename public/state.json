@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-09-23T01:34:32.279Z",
+  "fetched_at": "2026-09-23T06:39:42.689Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -491,18 +491,10 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-09-22T04:31:32.000Z",
-      "display_text": "Ladies and gentlemen... start... your... ENGINES. We are almost Tuesday and I promised a reset for Tuesday. Among some other things. See you soon.",
-      "reset_type": "regular",
-      "scheduled_for": "2026-09-23T06:59:00.000Z",
-      "text": "Ladies and gentlemen... start... your... ENGINES. We are almost Tuesday and I promised a reset for Tuesday. Among some other things. See you soon.",
-      "tweet_id": "2102254445082116335",
-      "tweet_url": "https://x.com/thsottiaux/status/2102254445082116335"
-    },
+    "scheduled": null,
     "stats": {
       "avg_interval_days": 7,
-      "days_since_last": 0.3,
+      "days_since_last": 0.5,
       "last_reset_at": "2026-09-22T18:23:37.000Z",
       "total": 54
     },
