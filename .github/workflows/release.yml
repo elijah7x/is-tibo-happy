@@ -28,6 +28,57 @@ jobs:
           lipo -info is-tibo-happy
           shasum -a 256 is-tibo-happy > SHA256SUMS
           ./is-tibo-happy --selftest
+      - name: forward-update gate（候选 daemon 必须能把自己更新到下一版）
+        run: |
+          set -e
+          # 假安装环境：exe 住进 HOME 下的安装目录（installed() 门禁会过），
+          # 再放个空目录冒充 ~/Applications/ChatGPT.app（find_app 只查存在性）
+          FH=$(mktemp -d)
+          IDIR="$FH/Library/Application Support/is-tibo-happy"
+          mkdir -p "$IDIR" "$FH/Applications/ChatGPT.app"
+          cp native/is-tibo-happy "$IDIR/is-tibo-happy"
+          chmod +x "$IDIR/is-tibo-happy"
+          # 合成 N+1 release：用刚构建的 universal 二进制，标 v99.0.0
+          WORK=$(mktemp -d)
+          cp native/is-tibo-happy "$WORK/is-tibo-happy"
+          shasum -a 256 "$WORK/is-tibo-happy" | awk '{print $1"  is-tibo-happy"}' > "$WORK/SHA256SUMS"
+          python3 - "$WORK" <<'PY' &
+          import http.server, json, os, sys
+          os.chdir(sys.argv[1])
+          api = {"tag_name": "v99.0.0", "assets": [
+              {"name": "is-tibo-happy", "browser_download_url": "http://127.0.0.1:48999/is-tibo-happy"},
+              {"name": "SHA256SUMS", "browser_download_url": "http://127.0.0.1:48999/SHA256SUMS"}]}
+          class H(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path == '/releases/latest':
+                      b = json.dumps(api).encode()
+                      self.send_response(200); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+                  elif os.path.isfile(self.path.lstrip('/')):
+                      b = open(self.path.lstrip('/'), 'rb').read()
+                      self.send_response(200); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+                  else:
+                      self.send_response(404); self.end_headers()
+              def log_message(self, *a): pass
+          http.server.HTTPServer(('127.0.0.1', 48999), H).serve_forever()
+          PY
+          SRV=$!
+          sleep 1
+          INO_BEFORE=$(stat -f %i "$IDIR/is-tibo-happy")
+          # 真 daemon 路径跑起来：首轮轮询就检查更新 → 命中假端点 → 换二进制 → exit(1)
+          # （log! 走 stdout，真机上由 launchd StandardOutPath 收成 daemon.log，这里自重定向）
+          HOME=$FH ITH_UPDATE_API="http://127.0.0.1:48999/releases/latest" "$IDIR/is-tibo-happy" > "$FH/daemon.out" 2>&1 &
+          D=$!
+          for i in $(seq 1 90); do
+            grep -q "updated to" "$FH/daemon.out" 2>/dev/null && break
+            kill -0 $D 2>/dev/null || break
+            sleep 1
+          done
+          kill $D 2>/dev/null; wait $D 2>/dev/null; kill $SRV 2>/dev/null
+          # 三重断言：日志记录升级、inode 证明 rename 发生、落地二进制能过自检
+          grep -q "updated to v99.0.0" "$FH/daemon.out" || { echo "::error::forward-update failed"; cat "$FH/daemon.out"; exit 1; }
+          [ "$(stat -f %i "$IDIR/is-tibo-happy")" != "$INO_BEFORE" ] || { echo "::error::binary not swapped"; exit 1; }
+          "$IDIR/is-tibo-happy" --selftest
+          echo "forward-update gate ok: candidate updated itself to v99.0.0"
       - name: publish release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

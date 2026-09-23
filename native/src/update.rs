@@ -10,6 +10,11 @@ const LATEST_API: &str = "https://api.github.com/repos/elijah7x/is-tibo-happy/re
 const ASSET_BIN: &str = "is-tibo-happy";
 const ASSET_SUMS: &str = "SHA256SUMS";
 
+// 测试/发版门禁注入点：ITH_UPDATE_API 指向受控端点，生产环境不设就走 GitHub
+fn latest_api() -> String {
+    std::env::var("ITH_UPDATE_API").unwrap_or_else(|_| LATEST_API.into())
+}
+
 // 只有"已安装实例"才允许自动更新：exe 必须正好住在安装目录里（精确等值比较——
 // 子串匹配会把 `…/is-tibo-happy-dev` 这类兄弟目录误判成安装实例）
 pub fn installed(exe_dir: PathBuf) -> bool {
@@ -62,7 +67,12 @@ fn selftest(path: &Path) -> Result<(), String> {
 // Ok(Some(ver)) = 已换好新二进制，调用方应退出让 launchd 重启；Ok(None) = 无更新
 pub fn check_and_swap(ua: &str) -> Result<Option<String>, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let rel = ureq::get(LATEST_API)
+    check_and_swap_at(&exe, ua)
+}
+
+// 替换目标可注入：测试里换成临时文件，不然 check_and_swap 会原地改写调用进程的二进制
+pub fn check_and_swap_at(exe: &Path, ua: &str) -> Result<Option<String>, String> {
+    let rel = ureq::get(&latest_api())
         .timeout(Duration::from_secs(10))
         .set("User-Agent", ua)
         .set("Accept", "application/vnd.github+json")
