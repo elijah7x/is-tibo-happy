@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-09-24T23:48:46.143Z",
+  "fetched_at": "2026-09-25T04:11:28.891Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -494,7 +494,7 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 7,
-      "days_since_last": 2.2,
+      "days_since_last": 2.4,
       "last_reset_at": "2026-09-22T18:23:37.000Z",
       "total": 54
     },
