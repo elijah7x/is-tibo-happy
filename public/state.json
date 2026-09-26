@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-09-26T15:00:52.906Z",
+  "fetched_at": "2026-09-26T18:31:51.545Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-09-26T18:17:54.000Z",
+        "display_text": "Resets all propagated. That will be all. Have a fantastic weekend.",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "Resets all propagated. That will be all. Have a fantastic weekend.",
+        "tweet_id": "2103911959544610829",
+        "tweet_url": "https://x.com/thsottiaux/status/2103911959544610829"
+      },
       {
         "announced_at": "2026-09-22T18:23:37.000Z",
         "display_text": "GPT-6 Sol and Luna are out. Not only are they a very significant improvement across the board, but also in writing and general \"you know when you try it\" quality. \n\nWe are also permanently reducing the API price by 50% making both of them viable for a ton of new usecases and making your usage go further too, even on the subscriptions.\n\nAnd one more thing. We are loading a banked reset into all accounts of our Plus, Pro and Business users. Let's go!\n\nhttps://t.co/00DRh1sRrO",
@@ -491,20 +500,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-09-26T00:07:13.000Z",
-      "display_text": "o yes… we’re back in action and we’ll reset usage limits for all paid users across codex and ChatGPT work\n\nsorry about the brief disruption!\n\n(and yes we have a special spare codex when things are down to help us out) https://t.co/Qy0da4L1jq",
-      "reset_type": "regular",
-      "scheduled_for": null,
-      "text": "o yes… we’re back in action and we’ll reset usage limits for all paid users across codex and ChatGPT work\n\nsorry about the brief disruption!\n\n(and yes we have a special spare codex when things are down to help us out) https://t.co/Qy0da4L1jq",
-      "tweet_id": "2103637477760311522",
-      "tweet_url": "https://x.com/thsottiaux/status/2103637477760311522"
-    },
+    "scheduled": null,
     "stats": {
-      "avg_interval_days": 7,
-      "days_since_last": 3.9,
-      "last_reset_at": "2026-09-22T18:23:37.000Z",
-      "total": 54
+      "avg_interval_days": 6.9,
+      "days_since_last": 0,
+      "last_reset_at": "2026-09-26T18:17:54.000Z",
+      "total": 55
     },
     "watch": null
   }
