@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-09-26T21:34:11.206Z",
+  "fetched_at": "2026-09-26T23:54:26.793Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -500,10 +500,18 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": null,
+    "scheduled": {
+      "announced_at": "2026-09-26T21:41:35.000Z",
+      "display_text": "@giadotai Sorry Gia. More resets coming next week",
+      "reset_type": "regular",
+      "scheduled_for": null,
+      "text": "@giadotai Sorry Gia. More resets coming next week",
+      "tweet_id": "2103963215885701493",
+      "tweet_url": "https://x.com/thsottiaux/status/2103963215885701493"
+    },
     "stats": {
       "avg_interval_days": 6.9,
-      "days_since_last": 0.1,
+      "days_since_last": 0.2,
       "last_reset_at": "2026-09-26T18:17:54.000Z",
       "total": 55
     },
