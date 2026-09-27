@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-09-27T10:12:55.745Z",
+  "fetched_at": "2026-09-27T15:13:03.381Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -500,21 +500,38 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-09-26T21:41:35.000Z",
-      "display_text": "@giadotai Sorry Gia. More resets coming next week",
-      "reset_type": "regular",
-      "scheduled_for": null,
-      "text": "@giadotai Sorry Gia. More resets coming next week",
-      "tweet_id": "2103963215885701493",
-      "tweet_url": "https://x.com/thsottiaux/status/2103963215885701493"
-    },
+    "scheduled": null,
     "stats": {
       "avg_interval_days": 6.9,
-      "days_since_last": 0.7,
+      "days_since_last": 0.9,
       "last_reset_at": "2026-09-26T18:17:54.000Z",
       "total": 55
     },
-    "watch": null
+    "watch": {
+      "context_text": null,
+      "context_tweet_id": null,
+      "context_tweet_url": null,
+      "display_context_text": null,
+      "display_text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
+      "episode_hints": [
+        {
+          "context_text": null,
+          "display_context_text": null,
+          "display_text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
+          "observed_at": "2026-09-27T10:39:35.426Z",
+          "text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
+          "tweet_id": "manual-devday-20260929",
+          "tweet_url": ""
+        }
+      ],
+      "expires_at": "2026-09-30T06:59:59.999Z",
+      "forecast_window": "around OpenAI DevDay 2026 on September 29 (Pacific Time)",
+      "level": "strong",
+      "observed_at": "2026-09-27T10:39:35.426Z",
+      "reset_chance": null,
+      "text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
+      "tweet_id": "manual-devday-20260929",
+      "tweet_url": ""
+    }
   }
 }
