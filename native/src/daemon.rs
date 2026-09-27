@@ -1,12 +1,12 @@
 // is-tibo-happy 主控：启动宿主 → CDP 注入 widget → 抓数据推状态 → 断线自愈。
 //   is-tibo-happy            常驻守护（LaunchAgent 语境）
 //   --once    注入+推一次状态后退出
-//   --no-quit App 已运行但没开调试端口时，不自动重启它，直接报错退出
 //   --launch  手动授权：App 没在跑也拉起
 //   --no-update 关闭每日热更新检查
 // 资源纪律：App 缺席时只在首装/--launch 下拉起（退出不复活）。附加优先级：
 // 调试端口已在 → 常驻 CDP 会话；在跑但没端口 → SIGUSR1 走 Node inspector 附加
-// （零重启零弹窗）；inspector 不可用才回退"静默重启一次挂端口"。
+// （零重启零弹窗）。永不杀/不重启在跑的宿主：inspector 不可用就只等待，
+// widget 缺席可接受，动用户进程不可接受。
 use crate::cdp::{self, Cdp, CdpEvent};
 use crate::inspector;
 use crate::net::fetch_forecast;
@@ -202,7 +202,7 @@ impl RelaunchCap {
 
 struct Daemon {
     exe: PathBuf,
-    no_quit: bool,
+    app: PathBuf,
     no_update: bool,
     once: bool,
     stopping: Arc<AtomicBool>,
@@ -226,6 +226,8 @@ struct Daemon {
     cache: Mutex<Value>, // {state, at} 或 Null
     cache_file: PathBuf,
     first_flag: PathBuf,
+    poison_file: PathBuf, // inspector 熔断：<install>/inspector-poisoned（内容=Framework mtime key）
+    idle_pid: AtomicU32,  // "不打扰在跑的 App"日志：每个 pid 只打一次
     tz: Option<String>,
 }
 
@@ -361,7 +363,7 @@ impl Daemon {
             // 取数在会话外做（同 inspector_init 的理由）
             let s = self.fetch_state();
             let _g = self.insp_lock.lock().unwrap();
-            match inspector::attach(&self.exe) {
+            match inspector::attach(&self.exe, &self.app, &self.poison_file) {
                 Ok((conn, _)) => {
                     // 探活成功 = 恢复证据：清掉残留的 init 退避（钩子在窗口期已自己注入）
                     if self.inspector_session(&conn, true, &s) {
@@ -477,21 +479,35 @@ impl Daemon {
         let s = self.display_state();
         {
             let _g = self.insp_lock.lock().unwrap();
-            let (conn, pid) = match inspector::attach(&self.exe) {
+            let (conn, pid) = match inspector::attach(&self.exe, &self.app, &self.poison_file) {
                 Ok(v) => v,
                 Err(e) => {
                     // attach 失败一律歇 30s：不歇就每 5s 重试一轮
                     *self.next_init_at.lock().unwrap() =
                         Some(Instant::now() + Duration::from_secs(30));
+                    // 信号前闸拒发：构建不被支持（多半是轮询间隙原位升级换了 fuse-off
+                    // 版本）——进程活着没出事，不写 poison，只关掉本会话的 inspector 通道
+                    if e.contains("unsupported on this build") {
+                        self.inspector_ok.store(false, Ordering::Relaxed);
+                        log!("inspector unsupported on this app build — not signaling");
+                        return InitRes::Failed;
+                    }
                     // 9229 被无关 inspector 占用：不是宿主能力问题——不记三振，
                     // 降级路径会为一个蹲坑的进程重启用户 App，太亏
                     if e.contains("owner mismatch") {
                         log!("inspector attach deferred (foreign inspector): {e}");
                         return InitRes::Deferred;
                     }
-                    // 同 pid 且刚起 = 启动中竞态，不记 strike；
-                    // pid 没了/换了 = 可能是信号把它杀了（无 handler 的最坏情形）
-                    // ——记 strike 触发降级止损，别拿 SIGUSR1 反复戳它
+                    // attach 后主进程没了/换了：多半是我们的 SIGUSR1 撞上没装
+                    // handler 的构建——立即熔断本宿主版本（poison 记 Framework mtime，
+                    // 新版本自动解封），不等三振，更不能再发信号戳它
+                    if inspector::main_pid(&self.exe) != Some(pid) {
+                        self.inspector_ok.store(false, Ordering::Relaxed);
+                        inspector::write_poison(&self.app, &self.poison_file);
+                        log!("app vanished after SIGUSR1 — inspector disabled for this app build");
+                        return InitRes::Failed;
+                    }
+                    // 同 pid 且刚起 = 启动中竞态，不记 strike
                     let young = self
                         .app_seen_at
                         .lock()
@@ -594,42 +610,22 @@ impl Daemon {
         Err("main window target never appeared".into())
     }
 
-    // 返回 true = 调试端口可用。App 在跑但没端口 → 静默退出再以带端口参数拉起
-    // （pkill 信号，不走 Apple Events，无授权弹窗）；launch_if_absent=false 时
-    // App 没在跑就原地等待，不主动拉起。
+    // 返回 true = 调试端口可用。App 在跑但没端口 → 原地等待（永不杀/不重启
+    // 在跑的宿主：widget 缺席可接受，动用户进程不可接受）；
+    // launch_if_absent=true 时 App 没在跑才以带端口参数拉起。
     fn ensure_app(&self, launch_if_absent: bool) -> Result<bool, String> {
         if port_up() {
             return Ok(true);
         }
         if app_running(&self.exe) {
-            if self.no_quit {
-                return Err("app is running without debug port; quit it or drop --no-quit".into());
+            // 每个 pid 只记一行：30s 轮询不刷屏，App 换代后重新报告
+            let pid = inspector::main_pid(&self.exe).unwrap_or(0);
+            if self.idle_pid.swap(pid, Ordering::Relaxed) != pid {
+                log!("inspector unavailable for this app build and no debug port — widget idle, leaving the app alone");
             }
-            if !self.cap.lock().unwrap().allowed() {
-                return Ok(false);
-            }
-            log!("app running without debug port; restarting it once");
-            // 信号而非 osascript：Apple Events 会弹"想要控制 Codex"授权框，
-            // 同 uid 进程的信号不需要任何授权——用户不该看到这条提示
-            let _ = run_cmd(
-                "pkill",
-                &["-TERM", "-f", &self.exe.to_string_lossy()],
-                Duration::from_secs(5),
-            );
-            for _ in 0..15 {
-                if !app_running(&self.exe) {
-                    break;
-                }
-                thread::sleep(Duration::from_secs(1));
-            }
-            if app_running(&self.exe) {
-                // TERM 没被理（挂起/慢退出）→ 不升级 KILL：装饰性挂件不值得为个端口
-                // 杀用户进程。留着它，下轮再试；真退出了说明是我们的 TERM 生效。
-                log!("app ignored SIGTERM — leaving it alone, retry next poll");
-                return Ok(false);
-            }
-            return Ok(spawn_app(&self.exe, true));
+            return Ok(false);
         }
+        self.idle_pid.store(0, Ordering::Relaxed);
         if !launch_if_absent || !self.cap.lock().unwrap().allowed() {
             return Ok(false);
         }
@@ -773,7 +769,6 @@ fn sleep_seg(dur: Duration, stopping: &AtomicBool) {
 
 pub fn run(args: &[String]) -> i32 {
     let once = args.iter().any(|a| a == "--once");
-    let no_quit = args.iter().any(|a| a == "--no-quit");
     let force_launch = args.iter().any(|a| a == "--launch");
     let no_update =
         args.iter().any(|a| a == "--no-update") || std::env::var_os("ITH_NO_UPDATE").is_some();
@@ -811,7 +806,7 @@ pub fn run(args: &[String]) -> i32 {
 
     let daemon = Arc::new(Daemon {
         exe: app_exe(&app),
-        no_quit,
+        app: app.clone(),
         no_update,
         once,
         stopping: stopping.clone(),
@@ -835,6 +830,8 @@ pub fn run(args: &[String]) -> i32 {
         cache: Mutex::new(cache),
         cache_file,
         first_flag: dir.join(".first-run"),
+        poison_file: dir.join("inspector-poisoned"),
+        idle_pid: AtomicU32::new(0),
         tz: iana_time_zone::get_timezone().ok(),
     });
 
@@ -853,8 +850,10 @@ pub fn run(args: &[String]) -> i32 {
     let mut session_fails = 0u32;
     let mut attach_fails = 0u32;
     let d = daemon.clone();
-    // inspector 通道：Framework 里有 SIGUSR1 handler 才启用（ITH_NO_INSPECT 可强制回退老路）
-    if std::env::var_os("ITH_NO_INSPECT").is_none() && inspector::supported(&app) {
+    // inspector 通道：符号+fuse+未熔断三者齐全才启用（ITH_NO_INSPECT 可强制回退老路）
+    if std::env::var_os("ITH_NO_INSPECT").is_none()
+        && inspector::supported(&app, &d.poison_file)
+    {
         d.inspector_ok.store(true, Ordering::Relaxed);
         log!("inspector channel available — zero-restart attach");
     }
@@ -867,7 +866,8 @@ pub fn run(args: &[String]) -> i32 {
             // 进程换代可能换了宿主版本——重新评估 inspector 能力（supported 按
             // Framework mtime 缓存，没变体不重扫），降级过也能自愈回来
             if std::env::var_os("ITH_NO_INSPECT").is_none() {
-                d.inspector_ok.store(inspector::supported(&app), Ordering::Relaxed);
+                d.inspector_ok
+                    .store(inspector::supported(&app, &d.poison_file), Ordering::Relaxed);
             }
             // App 缺席：仅"安装后首跑"（标记文件）或 --launch 授权才拉起；
             // 之后用户退出就只等不拉（缺席拉起 = 退出后它自己又弹回来，太打扰）
@@ -971,13 +971,24 @@ pub fn probe(args: &[String]) -> i32 {
     };
     let exe = app_exe(&app);
     println!("app: {}", app.display());
-    println!("handler symbol: {}", inspector::supported(&app));
+    let poison = exe_dir().join("inspector-poisoned");
+    // 三项能力分开印：符号在但 fuse 关 / 被熔断，都是"绝不能发 SIGUSR1"
+    println!("handler symbol: {}", inspector::handler_symbol(&app));
+    println!(
+        "fuse nodeCliInspect: {:?}",
+        inspector::fuse_cli_inspect(&inspector::framework_bin(&app))
+    );
+    println!("poisoned: {}", inspector::poisoned(&app, &poison));
+    if !inspector::supported(&app, &poison) {
+        eprintln!("probe: inspector unsupported on this build — not signaling");
+        return 1;
+    }
     let Some(pid) = inspector::main_pid(&exe) else {
         eprintln!("probe: app not running");
         return 1;
     };
     println!("main pid: {pid}");
-    match inspector::attach(&exe) {
+    match inspector::attach(&exe, &app, &poison) {
         Ok((conn, _)) => {
             if args.iter().any(|a| a == "--reinit") {
                 // 清幂等标记让新钩子注册生效（旧 listener 仍在但注入幂等，无妨）

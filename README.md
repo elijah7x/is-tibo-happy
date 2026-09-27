@@ -100,7 +100,7 @@ Weekdays are converted to **your timezone** (his "Tuesday" may be Wednesday morn
 ## FAQ
 
 **No card in the menu?**
-`tail ~/Library/Application\ Support/is-tibo-happy/daemon.log`. Usually Codex just restarted (wait ~10s) or the app isn't in `/Applications` / `~/Applications`.
+`tail ~/Library/Application\ Support/is-tibo-happy/daemon.log`. Usually Codex just restarted (wait ~10s) or the app isn't in `/Applications` / `~/Applications`. If the log says `inspector unavailable for this app build`, this Codex build ships with its inspector fuse off — Tibo deliberately leaves the app alone and stays idle (never kills or restarts Codex).
 
 **Card vanished after a Codex update?**
 The daemon re-attaches automatically. If an UI redesign breaks menu detection, the log shows `menu-unmatched` — please open an issue.

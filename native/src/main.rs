@@ -1,5 +1,5 @@
 // is-tibo-happy：单一二进制多子命令。
-//   is-tibo-happy [--once|--no-quit|--launch|--no-update]   常驻守护（默认）
+//   is-tibo-happy [--once|--launch|--no-update]   常驻守护（默认）
 //   is-tibo-happy fetch-state [--out PATH]                  GH Actions 镜像任务（写信封 JSON）
 //   is-tibo-happy update                                   手动触发一次热更新检查
 //   is-tibo-happy probe                                    dev 验证：SIGUSR1 附加活体 App，注入一次后摘出

@@ -97,7 +97,7 @@ GitHub Actions 每 20 分钟抓一次源站 → 存成 public/state.json
 ## 常见问题
 
 **菜单里没出现卡片？**
-`tail ~/Library/Application\ Support/is-tibo-happy/daemon.log` 看最后几行。常见原因：Codex 刚重启还没连上（等 10 秒再开菜单）；Codex 不在 `/Applications` 或 `~/Applications`。
+`tail ~/Library/Application\ Support/is-tibo-happy/daemon.log` 看最后几行。常见原因：Codex 刚重启还没连上（等 10 秒再开菜单）；Codex 不在 `/Applications` 或 `~/Applications`。若日志出现 `inspector unavailable for this app build`，说明该版本 Codex 关掉了 inspector fuse——Tibo 会原地等待、绝不动宿主进程。
 
 **Codex 更新后卡片消失了？**
 守护进程会自动重连。如果界面改版导致找不到挂载点，日志里会有 `menu-unmatched`，欢迎开 issue。

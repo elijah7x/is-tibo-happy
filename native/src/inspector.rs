@@ -6,6 +6,7 @@
 // 比 renderer CDP 权限更高，绝不留常驻监听。
 use crate::cdp::{self, Cdp};
 use serde_json::{json, Value};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -62,32 +63,131 @@ pub fn main_pid(exe: &Path) -> Option<u32> {
     .find(|&pid| pid_exe_path(pid) == Some(want.clone()))
 }
 
-// 静态 gate：Framework 里没有 node 的 StartDebugSignalHandler → 进程没装
-// handler，SIGUSR1 走默认动作会把它杀死——盲发不得。按 Framework mtime 缓存判定。
-pub fn supported(app: &Path) -> bool {
-    static CACHE: Mutex<Option<(u64, bool)>> = Mutex::new(None);
-    let bin = app.join("Contents/Frameworks/Codex Framework.framework/Codex Framework");
-    let key = std::fs::metadata(&bin)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    if key != 0 {
-        if let Some((k, ok)) = *CACHE.lock().unwrap() {
-            if k == key {
-                return ok;
+pub fn framework_bin(app: &Path) -> PathBuf {
+    app.join("Contents/Frameworks/Codex Framework.framework/Codex Framework")
+}
+
+// Framework 身份键 "mtime:size:ino"：作 supported 缓存键，也作 poison 文件内容——
+// 原位升级（同秒 mtime 也可能撞）靠 size/inode 兜底；metadata 取不到 → None = 不缓存
+fn framework_key(app: &Path) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::metadata(framework_bin(app)).ok()?;
+    let mt = m
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(format!("{mt}:{}:{}", m.len(), m.ino()))
+}
+
+// Electron fuse 线：sentinel + version(1B) + 个数 n(1B) + n 个 ASCII 位。
+// index 3 = nodeCliInspect：fuse 关时二进制里 handler 符号仍在但进程不装
+// SIGUSR1 handler——符号检查过了不够，必须读线本体（发信号 = 杀进程）。
+const FUSE_SENTINEL: &[u8] = b"dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX";
+const FUSE_IDX_CLI_INSPECT: usize = 3;
+
+// sentinel 后字节流的纯解析：version 须为 1，n>3，wire[3]∈{'0','1','r'}
+fn parse_fuse_wire(tail: &[u8]) -> Option<bool> {
+    if tail.len() < 2 || tail[0] != 1 {
+        return None;
+    }
+    let n = tail[1] as usize;
+    if n <= FUSE_IDX_CLI_INSPECT || tail.len() < 2 + n {
+        return None;
+    }
+    match tail[2 + FUSE_IDX_CLI_INSPECT] {
+        b'1' => Some(true),
+        b'0' | b'r' => Some(false),
+        _ => None,
+    }
+}
+
+// 流式扫全文件找 fuse 线（universal 二进制每个 slice 各有一条，必须全查）：
+// 1MiB 块 + 64B 重叠防跨块漏检；命中后补读线尾用独立句柄 seek，不动主游标。
+// 汇总规则：零命中/任一不可解析 → None；任一 '0'/'r' → Some(false)；全 '1' → Some(true)
+pub fn fuse_cli_inspect(path: &Path) -> Option<bool> {
+    let mut f = std::fs::File::open(path).ok()?;
+    const CHUNK: usize = 1 << 20;
+    const OVLP: usize = 64;
+    let mut buf = vec![0u8; CHUNK + OVLP];
+    let mut carry = 0usize;
+    let mut base = 0u64;   // buf[0] 的文件绝对偏移
+    let mut consumed = 0u64; // 已读入缓冲的绝对末尾（补读线尾的 seek 起点）
+    let mut last_hit: Option<u64> = None; // 重叠区重复命中同一条线按绝对偏移去重
+    let mut votes: Vec<bool> = Vec::new();
+    loop {
+        let n = f.read(&mut buf[carry..carry + CHUNK]).ok()?;
+        consumed += n as u64;
+        let end = carry + n;
+        let mut i = 0;
+        while i + FUSE_SENTINEL.len() <= end {
+            if buf[i..i + FUSE_SENTINEL.len()] == *FUSE_SENTINEL {
+                let abs = base + i as u64;
+                if Some(abs) != last_hit {
+                    last_hit = Some(abs);
+                    let mut tail: Vec<u8> = buf[i + FUSE_SENTINEL.len()..end].to_vec();
+                    if tail.len() < 2 || tail.len() < 2 + tail[1] as usize {
+                        let mut ext = [0u8; 512];
+                        if let Ok(mut g) = std::fs::File::open(path)
+                            .and_then(|mut g| g.seek(SeekFrom::Start(consumed)).map(|_| g))
+                        {
+                            if let Ok(m) = g.read(&mut ext) {
+                                tail.extend_from_slice(&ext[..m]);
+                            }
+                        }
+                    }
+                    match parse_fuse_wire(&tail) {
+                        Some(v) => votes.push(v),
+                        None => return None,
+                    }
+                }
+                i += FUSE_SENTINEL.len();
+            } else {
+                i += 1;
             }
         }
+        if n == 0 {
+            break;
+        }
+        carry = OVLP.min(end);
+        buf.copy_within(end - carry..end, 0);
+        base += (end - carry) as u64;
     }
+    if votes.is_empty() {
+        None
+    } else if votes.iter().all(|&v| v) {
+        Some(true)
+    } else {
+        Some(false)
+    }
+}
+
+// 熔断文件内容 = Framework 身份键：同版本内 supported() 永假，换版本自动解封
+pub fn write_poison(app: &Path, file: &Path) {
+    if let Some(k) = framework_key(app) {
+        let _ = std::fs::write(file, k);
+    }
+}
+pub fn poisoned(app: &Path, file: &Path) -> bool {
+    match framework_key(app) {
+        Some(k) => std::fs::read_to_string(file)
+            .ok()
+            .is_some_and(|s| s.trim() == k),
+        None => false,
+    }
+}
+
+// handler 符号存在性（单独可测）：没有 → 进程没装 handler，盲发 SIGUSR1 会杀死它
+pub fn handler_symbol(app: &Path) -> bool {
     // grep -m1 命中即退——strings 不必读完全量
-    let ok = Command::new("sh")
+    Command::new("sh")
         .args([
             "-c",
             "strings -a \"$1\" | grep -qm1 StartDebugSignalHandler",
             "sh",
         ])
-        .arg(&bin)
+        .arg(framework_bin(app))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -100,16 +200,38 @@ pub fn supported(app: &Path) -> bool {
                 false
             }
         })
-        .unwrap_or(false);
-    if key != 0 {
+        .unwrap_or(false)
+}
+
+// 静态 gate（fail closed）：handler 符号 + fuse nodeCliInspect=on + 未被 poison
+// 三者齐全才允许发 SIGUSR1。符号+fuse 按 Framework mtime 缓存；poison 每次现查
+// （熔断必须即时生效，不能吃到缓存里的旧结论）。
+pub fn supported(app: &Path, poison_file: &Path) -> bool {
+    static CACHE: Mutex<Option<(String, bool)>> = Mutex::new(None);
+    if let Some(key) = framework_key(app) {
+        if let Some((k, ok)) = &*CACHE.lock().unwrap() {
+            if *k == key {
+                return *ok && !poisoned(app, poison_file);
+            }
+        }
+        let bin = framework_bin(app);
+        let ok = handler_symbol(app) && fuse_cli_inspect(&bin) == Some(true);
         *CACHE.lock().unwrap() = Some((key, ok));
+        return ok && !poisoned(app, poison_file);
     }
-    ok
+    // metadata 取不到：不缓存，符号+fuse 现查，判不出也 fail closed
+    let bin = framework_bin(app);
+    handler_symbol(app) && fuse_cli_inspect(&bin) == Some(true) && !poisoned(app, poison_file)
 }
 
 // SIGUSR1 → 等 inspector 端点 → 连 ws → eval process.pid 验明正身。
 // 9229 可能被别的 Node 进程占用：pid 不符立刻断开，绝不在别人的 inspector 上跑码。
-pub fn attach(exe: &Path) -> Result<(Cdp, u32), String> {
+pub fn attach(exe: &Path, app: &Path, poison_file: &Path) -> Result<(Cdp, u32), String> {
+    // 信号前最后一道闸：宿主可能在两次轮询之间被原位升级（秒级），
+    // 挂着的 inspector_ok 是旧构建的结论——kill -USR1 之前必须按当前文件重判
+    if !supported(app, poison_file) {
+        return Err("inspector unsupported on this build".into());
+    }
     let pid = main_pid(exe).ok_or("app main process not found")?;
     let _ = Command::new("kill")
         .args(["-USR1", &pid.to_string()])
@@ -306,19 +428,110 @@ mod tests {
         assert!(only.contains("setState"));
     }
 
+    // fuse 线字节序列：sentinel + version + n + n 个 ASCII 位
+    fn fuse_wire(version: u8, bits: &str) -> Vec<u8> {
+        let mut v = Vec::from(FUSE_SENTINEL);
+        v.push(version);
+        v.push(bits.len() as u8);
+        v.extend_from_slice(bits.as_bytes());
+        v
+    }
+    fn tail(wire: &[u8]) -> &[u8] {
+        &wire[FUSE_SENTINEL.len()..]
+    }
+
     #[test]
-    fn supported_gates_on_framework_symbol() {
-        // 假 bundle：framework 二进制里没有 handler 符号 → false；有 → true
-        let dir = std::env::temp_dir().join(format!("ith-insp-{}", std::process::id()));
+    fn fuse_wire_parsing() {
+        assert_eq!(parse_fuse_wire(tail(&fuse_wire(1, "010011001"))), Some(false)); // index3='0'
+        assert_eq!(parse_fuse_wire(tail(&fuse_wire(1, "011111111"))), Some(true)); // index3='1'
+        assert_eq!(parse_fuse_wire(tail(&fuse_wire(1, "010r11001"))), Some(false)); // 'r' = removed
+        assert_eq!(parse_fuse_wire(tail(&fuse_wire(2, "011111111"))), None); // version≠1
+        assert_eq!(parse_fuse_wire(tail(&fuse_wire(1, "010"))), None); // n=3，index3 不存在
+        assert_eq!(parse_fuse_wire(&fuse_wire(1, "010011001")[FUSE_SENTINEL.len()..FUSE_SENTINEL.len() + 5]), None); // 截断
+        assert_eq!(parse_fuse_wire(&[]), None);
+    }
+
+    #[test]
+    fn fuse_cli_inspect_streams_and_finds_sentinel() {
+        let dir = std::env::temp_dir().join(format!("ith-fuse-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("fw");
+        // 无 sentinel → None
+        std::fs::write(&f, b"just bytes").unwrap();
+        assert_eq!(fuse_cli_inspect(&f), None);
+        // sentinel 横跨 1MiB 块边界：pad 到 CHUNK-10，sentinel 前 10B 落第一块、余下进第二块
+        let mut blob = vec![b'x'; (1 << 20) - 10];
+        blob.extend_from_slice(&fuse_wire(1, "010011001"));
+        std::fs::write(&f, &blob).unwrap();
+        assert_eq!(fuse_cli_inspect(&f), Some(false));
+        blob.truncate((1 << 20) - 10);
+        blob.extend_from_slice(&fuse_wire(1, "011111111"));
+        std::fs::write(&f, &blob).unwrap();
+        assert_eq!(fuse_cli_inspect(&f), Some(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fuse_cli_inspect_multiwire_universal_rules() {
+        // universal 二进制每个 slice 一条线：任一 '0' → false；任一不可解析 → None
+        let dir = std::env::temp_dir().join(format!("ith-fuse2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("fw");
+        let mut b = fuse_wire(1, "011111111"); // 线1: index3='1'
+        b.extend_from_slice(&[b'x'; 4096]);
+        b.extend_from_slice(&fuse_wire(1, "010011001")); // 线2: index3='0'
+        std::fs::write(&f, &b).unwrap();
+        assert_eq!(fuse_cli_inspect(&f), Some(false));
+        let mut b = fuse_wire(1, "011111111");
+        b.extend_from_slice(&fuse_wire(1, "011111111"));
+        std::fs::write(&f, &b).unwrap();
+        assert_eq!(fuse_cli_inspect(&f), Some(true));
+        let mut b = fuse_wire(1, "011111111");
+        b.extend_from_slice(&fuse_wire(2, "011111111")); // 线2: version≠1 不可解析
+        std::fs::write(&f, &b).unwrap();
+        assert_eq!(fuse_cli_inspect(&f), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 假 bundle：{bin内容, poison内容或None} → supported()。每次重写 bin 前睡 1.1s
+    // 保证 mtime key 变化，不吃缓存旧值（支持 fuse 写入）
+    fn fake_app(tag: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("ith-{tag}-{}", std::process::id()));
         let fw = dir.join("Contents/Frameworks/Codex Framework.framework");
         std::fs::create_dir_all(&fw).unwrap();
-        let bin = fw.join("Codex Framework");
+        (dir.clone(), fw.join("Codex Framework"), dir.join("inspector-poisoned"))
+    }
+
+    #[test]
+    fn supported_gates_on_symbol_fuse_and_poison() {
+        let (dir, bin, poison) = fake_app("insp");
+        // 符号+fuse 都没有 → false
         std::fs::write(&bin, b"no handler here").unwrap();
-        assert!(!supported(&dir));
-        // 缓存放 key=mtime：等一秒改写保证新 key，避免吃到上面的缓存
+        assert!(!supported(&dir, &poison));
         thread::sleep(Duration::from_millis(1100));
+        // 只有符号、fuse 线缺失 → false（fail closed）
         std::fs::write(&bin, b"blob StartDebugSignalHandler blob").unwrap();
-        assert!(supported(&dir));
+        assert!(!supported(&dir, &poison));
+        thread::sleep(Duration::from_millis(1100));
+        // 符号 + fuse index3='0'（fuse 关）→ false：符号还在但 handler 不装
+        let mut b = Vec::from(&b"sym StartDebugSignalHandler"[..]);
+        b.extend_from_slice(&fuse_wire(1, "010011001"));
+        std::fs::write(&bin, &b).unwrap();
+        assert!(!supported(&dir, &poison));
+        thread::sleep(Duration::from_millis(1100));
+        // 符号 + fuse index3='1' → true
+        let mut b = Vec::from(&b"sym StartDebugSignalHandler"[..]);
+        b.extend_from_slice(&fuse_wire(1, "011111111"));
+        std::fs::write(&bin, &b).unwrap();
+        assert!(supported(&dir, &poison));
+        // poison 记当前 key → false；换 key（mtime 变）→ poison 自动失效
+        write_poison(&dir, &poison);
+        assert!(!supported(&dir, &poison));
+        assert!(poisoned(&dir, &poison));
+        thread::sleep(Duration::from_millis(1100));
+        std::fs::write(&bin, &b).unwrap(); // 同内容，mtime 变 → key 变
+        assert!(!poisoned(&dir, &poison));
+        assert!(supported(&dir, &poison));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
