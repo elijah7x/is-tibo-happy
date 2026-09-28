@@ -24,11 +24,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 **Requires**: macOS · Codex desktop (ChatGPT.app). No Node, no dependencies — one native binary (Apple Silicon + Intel universal).
 
-That's it. If Codex is running, Tibo attaches to it **without restarting** — no chats lost, no dialogs, nothing interrupted. If Codex isn't running it just shows up next time you open it. Auto-starts on login, re-attaches whenever Codex restarts.
+That's it. If Codex is running, Tibo attaches to it **without restarting** — no chats lost, no dialogs, nothing interrupted. If Codex isn't running it just shows up next time you open it. Auto-starts on login, re-attaches whenever Codex restarts. (On Codex builds that ship with the inspector fuse off, the card can't attach — see *Before you install* below.)
 
 ## Update
 
-The daemon checks for a new release once a day and swaps itself in (sha256-verified, self-tested, restarted by launchd). To opt out, set `ITH_NO_UPDATE=1` or re-run with `--no-update` in the plist. Manual check: `~/Library/Application\ Support/is-tibo-happy/is-tibo-happy update`.
+The daemon checks for a new release once a day — and right away when it notices Codex itself was updated (at most once per hour) — and swaps itself in (sha256-verified, self-tested, restarted by launchd). To opt out, set `ITH_NO_UPDATE=1` or re-run with `--no-update` in the plist. Manual check: `~/Library/Application\ Support/is-tibo-happy/is-tibo-happy update`.
 
 ## Uninstall
 
@@ -36,7 +36,7 @@ The daemon checks for a new release once a day and swaps itself in (sha256-verif
 curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninstall.sh | bash
 ```
 
-Stops the daemon, deletes every file, and relaunches Codex in normal mode (this also closes the debug port immediately). Nothing left behind.
+Stops the daemon and deletes every file — it never touches Codex. If an older version left Codex running with a debug port, quit and reopen Codex once to close it. Nothing left behind.
 
 <details>
 <summary>Manual uninstall</summary>
@@ -45,7 +45,7 @@ Stops the daemon, deletes every file, and relaunches Codex in normal mode (this 
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.istibohappy.daemon.plist
 rm -f ~/Library/LaunchAgents/com.istibohappy.daemon.plist
 rm -rf ~/Library/Application\ Support/is-tibo-happy
-# then quit and reopen Codex
+# if an older version left Codex running with a debug port, quit and reopen Codex once
 ```
 </details>
 
@@ -55,7 +55,7 @@ To draw inside Codex, the daemon briefly opens the app's built-in Node inspector
 
 - The inspector is loopback-only and **closed right after each attach** (a few hundred ms per cycle) — no debug port is left listening
 - During that window any local process could reach it — same loopback trust boundary as any local tool
-- On Codex builds without the inspector handler it falls back to launching with `--remote-debugging-port=9333` (loopback-only, stays open while Codex runs); uninstalling relaunches Codex normally either way
+- On Codex builds that ship with the inspector fuse off (e.g. Codex 26.924+), Tibo does not show the card and stays idle — it never kills, restarts or relaunches Codex and never opens a debug port
 
 If local-process isolation matters to you, don't install.
 

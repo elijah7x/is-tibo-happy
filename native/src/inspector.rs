@@ -69,7 +69,7 @@ pub fn framework_bin(app: &Path) -> PathBuf {
 
 // Framework 身份键 "mtime:size:ino"：作 supported 缓存键，也作 poison 文件内容——
 // 原位升级（同秒 mtime 也可能撞）靠 size/inode 兜底；metadata 取不到 → None = 不缓存
-fn framework_key(app: &Path) -> Option<String> {
+pub fn framework_key(app: &Path) -> Option<String> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(framework_bin(app)).ok()?;
     let mt = m

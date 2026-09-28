@@ -22,11 +22,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 
 **需要**：macOS · Codex 桌面版（ChatGPT.app）。没有 Node、没有任何依赖——就一个原生二进制（Apple Silicon 与 Intel 通用）。
 
-装完即生效：Codex 正在运行也**不用重启**——几秒内直接挂上，对话不丢、无弹窗、零打扰；没在运行则下次打开时自动生效。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。
+装完即生效：Codex 正在运行也**不用重启**——几秒内直接挂上，对话不丢、无弹窗、零打扰；没在运行则下次打开时自动生效。之后 Tibo 就在左下角账号菜单、你名字的下面。开机自启，Codex 重启自动接上，没有任何手动步骤。（若 Codex 版本关掉了 inspector fuse，卡片无法挂上——见下方"装前须知"。）
 
 ## 更新
 
-守护进程每天检查一次新版本，自动换上（sha256 校验 + 自检通过后原子替换，launchd 拉起新版）。想关掉：plist 里加 `--no-update` 参数，或设 `ITH_NO_UPDATE=1`。手动检查：`~/Library/Application\ Support/is-tibo-happy/is-tibo-happy update`。
+守护进程每天检查一次新版本；发现 Codex 本体刚更新过时也会立刻检查（最多每小时一次）。自动换上（sha256 校验 + 自检通过后原子替换，launchd 拉起新版）。想关掉：plist 里加 `--no-update` 参数，或设 `ITH_NO_UPDATE=1`。手动检查：`~/Library/Application\ Support/is-tibo-happy/is-tibo-happy update`。
 
 ## 卸载
 
@@ -34,7 +34,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/install.sh | 
 curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninstall.sh | bash
 ```
 
-停掉后台服务、删掉所有文件、把 Codex 重启回普通模式（若它带着调试端口也随之关闭）。不留残余。
+停掉后台服务、删掉所有文件，绝不动 Codex。若旧版本让正在运行的 Codex 带着调试端口，退出并重新打开 Codex 一次即可关闭。不留残余。
 
 <details>
 <summary>手动卸载</summary>
@@ -43,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninsta
 launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.istibohappy.daemon.plist
 rm -f ~/Library/LaunchAgents/com.istibohappy.daemon.plist
 rm -rf ~/Library/Application\ Support/is-tibo-happy
-# 然后退出并重新打开 Codex
+# 若旧版本让 Codex 带着调试端口，退出并重新打开 Codex 一次
 ```
 </details>
 
@@ -53,7 +53,7 @@ rm -rf ~/Library/Application\ Support/is-tibo-happy
 
 - inspector 只监听 127.0.0.1，且**每次附加完立刻关闭**（每轮窗口只有几百毫秒）——不留常驻调试端口
 - 附加窗口内本机程序理论上可达它——这和任何本机工具的信任边界一样
-- 遇到没有 inspector handler 的 Codex 版本，回退为带 `--remote-debugging-port=9333` 启动（仅 127.0.0.1，运行期间常开）；卸载时都会把 Codex 恢复正常
+- 遇到关掉 inspector fuse 的 Codex 版本（如 Codex 26.924+），Tibo 不显示卡片、原地等待——绝不杀、不重启、不拉起 Codex，也绝不开调试端口
 
 如果你在意"本机程序互相隔离"这层安全模型，请不要安装。
 

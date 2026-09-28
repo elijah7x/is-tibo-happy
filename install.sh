@@ -61,6 +61,7 @@ cat <<'DONE'
 
   · Codex 正在运行 → 不重启不打扰，Tibo 几秒内自动挂上
   · Codex 没在运行 → 下次你打开它时自动生效
+  · 若 Codex 版本关掉了 inspector fuse → 卡片不会出现（见 README"装前须知"）
 
   打开侧栏底部账号菜单即可看到 Tibo。
   卸载: curl -fsSL https://raw.githubusercontent.com/elijah7x/is-tibo-happy/main/uninstall.sh | bash

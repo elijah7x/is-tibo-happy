@@ -20,6 +20,7 @@ fn main() {
         let n = s.read(&mut buf).unwrap_or(0);
         let req = String::from_utf8_lossy(&buf[..n]);
         let path = req.split_whitespace().nth(1).unwrap_or("/");
+        println!("{} GET {path}", chrono::Local::now().format("%H:%M:%S%.3f"));
         let body = if path == "/releases/latest" {
             Some(rel.clone().into_bytes())
         } else {

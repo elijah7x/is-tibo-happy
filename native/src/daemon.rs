@@ -87,6 +87,12 @@ pub(crate) fn run_cmd(prog: &str, args: &[&str], timeout: Duration) -> Result<St
 }
 
 fn find_app() -> Option<PathBuf> {
+    // e2e 仿真钩子：显式指定宿主路径（生产环境不设，不设则按下面顺序探测）
+    if let Some(p) = std::env::var_os("ITH_APP_DIR").map(PathBuf::from) {
+        if p.exists() {
+            return Some(p);
+        }
+    }
     // 宿主可能装在 /Applications 或用户级 ~/Applications
     [
         "/Applications/ChatGPT.app".to_string(),
@@ -145,37 +151,25 @@ fn app_running(exe: &Path) -> bool {
     .unwrap_or(false)
 }
 
-// with_port=false：inspector 通道可用时的拉起——不带调试端口，成功判据是主进程出现
-fn spawn_app(exe: &Path, with_port: bool) -> bool {
-    if with_port {
-        log!("launching with debug port {PORT}");
-    } else {
-        log!("launching app (inspector attach on next poll)");
-    }
-    let mut c = Command::new(exe);
-    if with_port {
-        c.arg(format!("--remote-debugging-port={PORT}"));
-    }
-    let _ = c
+// 拉起宿主：永远不带 --remote-debugging-port（规则：不留常驻无鉴权本地控制端口）。
+// 成功判据是主进程出现；widget 走 SIGUSR1 inspector 附加，挂不上就只等待。
+fn spawn_app(exe: &Path) -> bool {
+    log!("launching app (inspector attach on next poll)");
+    let _ = Command::new(exe)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
     for _ in 0..45 {
         thread::sleep(Duration::from_secs(1));
-        let up = if with_port {
-            port_up()
-        } else {
-            inspector::main_pid(exe).is_some()
-        };
-        if up {
+        if inspector::main_pid(exe).is_some() {
             return true;
         }
     }
     false
 }
 
-// 近一小时内主动重启 App 的次数；两类拉起（重启带端口 / first-run 冷启）共用同一 cap
+// 近一小时内拉起 App 的次数（first-run/--launch 共用 cap，防打架循环）
 struct RelaunchCap {
     times: Vec<Instant>,
     logged: bool, // cap 封顶日志只打一次，窗口滑出后重置
@@ -610,9 +604,9 @@ impl Daemon {
         Err("main window target never appeared".into())
     }
 
-    // 返回 true = 调试端口可用。App 在跑但没端口 → 原地等待（永不杀/不重启
-    // 在跑的宿主：widget 缺席可接受，动用户进程不可接受）；
-    // launch_if_absent=true 时 App 没在跑才以带端口参数拉起。
+    // 返回 true = 调试端口可用（仅当用户自己带端口启动过 Codex——daemon 永远
+    // 不开这个端口）。App 在跑但没端口 → 原地等待（永不杀/不重启在跑的宿主）；
+    // launch_if_absent=true 时 App 没在跑才以普通模式拉起。
     fn ensure_app(&self, launch_if_absent: bool) -> Result<bool, String> {
         if port_up() {
             return Ok(true);
@@ -629,7 +623,7 @@ impl Daemon {
         if !launch_if_absent || !self.cap.lock().unwrap().allowed() {
             return Ok(false);
         }
-        Ok(spawn_app(&self.exe, true))
+        Ok(spawn_app(&self.exe))
     }
 
     // 一轮会话：连上主窗口 → 注入 → 挂到断开为止
@@ -717,12 +711,30 @@ impl Daemon {
         // 拉取失败退避：1min 起 ×2，上限 15min（JS retryTimer 等价物）
         let mut retry = Duration::from_secs(60);
         let mut last_update_check = Instant::now() - Duration::from_secs(24 * 3600); // 首轮轮询即检查更新
+        let mut last_host_key = inspector::framework_key(&self.app); // 宿主换代观察基线
+        let mut last_forced_check: Option<Instant> = None; // 触发式更新检查的 1h 下限
         while !self.stopping.load(Ordering::Relaxed) {
             self.push();
             if self.active.lock().unwrap().is_some() && !self.injected.load(Ordering::Relaxed) {
                 if let Some(c) = self.active.lock().unwrap().clone() {
                     let _ = self.inject(&c);
                 }
+            }
+            // 宿主 Framework 换代（Codex 原位升级）→ 立刻自查更新，不等 24h；
+            // None=观测不到（换代中途文件缺席）不触发不覆盖；强制检查 1h 一次封顶，
+            // 防 key 抖动把 GitHub API 打爆
+            let cur = inspector::framework_key(&self.app);
+            if host_changed(&last_host_key, &cur) {
+                if last_forced_check.is_some_and(|t| t.elapsed() < Duration::from_secs(3600)) {
+                    log!("host app changed — self-update check throttled (1h floor)");
+                } else {
+                    last_forced_check = Some(Instant::now());
+                    last_update_check = Instant::now() - Duration::from_secs(24 * 3600);
+                    log!("host app changed — checking for self-update now");
+                }
+            }
+            if cur.is_some() {
+                last_host_key = cur;
             }
             // 热更新：每日一次，只检查已安装实例（exe 在安装目录内）
             if !self.no_update
@@ -754,6 +766,11 @@ impl Daemon {
     fn exe_dir_marker(&self) -> PathBuf {
         exe_dir()
     }
+}
+
+// 宿主换代判定：None = 无观测（Framework 可能在替换中途），不触发也不覆盖基线
+fn host_changed(prev: &Option<String>, cur: &Option<String>) -> bool {
+    matches!((prev, cur), (Some(p), Some(c)) if p != c)
 }
 
 // 分段 sleep：SIGTERM 到达 1s 内就能醒——整段睡死会让 launchd bootout/升级
@@ -872,7 +889,7 @@ pub fn run(args: &[String]) -> i32 {
             // App 缺席：仅"安装后首跑"（标记文件）或 --launch 授权才拉起；
             // 之后用户退出就只等不拉（缺席拉起 = 退出后它自己又弹回来，太打扰）
             let may_launch = force_launch || d.first_flag.exists();
-            if may_launch && d.cap.lock().unwrap().allowed() && spawn_app(&d.exe, !d.inspector_ok.load(Ordering::Relaxed)) {
+            if may_launch && d.cap.lock().unwrap().allowed() && spawn_app(&d.exe) {
                 // 首装授权已兑现为一次拉起——消费掉，此后缺席永不再拉
                 let _ = std::fs::remove_file(&d.first_flag);
             }
@@ -1055,6 +1072,15 @@ pub fn probe(args: &[String]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_changed_only_fires_on_two_differing_observations() {
+        assert!(!host_changed(&None, &None));
+        assert!(!host_changed(&None, &Some("x:1:2".into())));
+        assert!(!host_changed(&Some("x:1:2".into()), &None));
+        assert!(!host_changed(&Some("a".into()), &Some("a".into())));
+        assert!(host_changed(&Some("a".into()), &Some("b".into())));
+    }
 
     // 🔴-2 回归：详情序列化后按字节切，byte 120 落进 CJK 字符内部必 panic
     #[test]
