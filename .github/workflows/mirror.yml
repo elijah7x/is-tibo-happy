@@ -1,7 +1,7 @@
 name: mirror
 on:
   schedule:
-    - cron: '*/20 * * * *'   # 每 20 分钟抓一次源站
+    - cron: '7-59/20 * * * *'   # 每 20 分钟抓一次源站；错开整点（GitHub 整点调度最拥挤、最易丢跑）
   workflow_dispatch:
 permissions:
   contents: write
@@ -13,7 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
-      - name: mirror-gap probe（接手时数据已 >4h 说明调度停摆过——本轮标红告警但照常更新）
+      # 调度停摆 >4h 只记 warning 注解（不标红不发邮件）——GitHub cron 丢跑是平台常态；
+      # 客户端镜像新鲜窗 6h 且主源优先，>12h 才算镜像长期失效，才标红
+      - name: mirror-gap probe（>4h 记 warning；>12h 本轮标红告警但照常更新）
         id: gap
         run: |
           age=$(python3 -c "
@@ -21,7 +23,8 @@ jobs:
           t=datetime.datetime.fromisoformat(json.load(open('public/state.json'))['fetched_at'].replace('Z','+00:00'))
           print(f'{(datetime.datetime.now(datetime.timezone.utc)-t).total_seconds()/3600:.2f}')")
           echo "state.json fetched_at age: ${age}h"
-          python3 -c "import sys;sys.exit(0 if float('$age')<=4 else 1)" || echo "gap=1" >> "$GITHUB_OUTPUT"
+          python3 -c "import sys;sys.exit(0 if float('$age')<=4 else 1)" || echo "::warning::mirror gap: fetched_at was ${age}h stale (scheduled runs were delayed)"
+          python3 -c "import sys;sys.exit(0 if float('$age')<=12 else 1)" || echo "gap=1" >> "$GITHUB_OUTPUT"
       - name: build fetch-state（同一实现，防双状态机漂移）
         run: cargo build --locked --release --manifest-path native/Cargo.toml
       - run: ./native/target/release/is-tibo-happy fetch-state
@@ -35,8 +38,8 @@ jobs:
           git push
       # jsDelivr @main 边缘缓存最长 12h > 客户端 6h 新鲜窗，push 后主动失效
       - run: curl -fsS "https://purge.jsdelivr.net/gh/elijah7x/is-tibo-happy@main/public/state.json" || true
-      - name: alarm（本轮接手时 fetched_at 已陈旧 >4h → 期间定时调度没跑）
+      - name: alarm（本轮接手时 fetched_at 已陈旧 >12h → 镜像已长期超出客户端新鲜窗）
         if: steps.gap.outputs.gap == '1'
         run: |
-          echo "::error::mirror gap detected — fetched_at was >4h stale; scheduled runs were not firing"
+          echo "::error::mirror gap detected — fetched_at was >12h stale; scheduled runs were not firing"
           exit 1
