@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-09-29T23:53:11.363Z",
+  "fetched_at": "2026-09-30T05:26:44.972Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-09-29T19:00:00.000Z",
+        "display_text": "@theo Shhhhhh",
+        "reset_type": "banked",
+        "source": "observed",
+        "text": "@theo Shhhhhh",
+        "tweet_id": "observed-20260929T190000Z",
+        "tweet_url": "https://x.com/thsottiaux/status/2105120226027450685"
+      },
       {
         "announced_at": "2026-09-26T18:17:54.000Z",
         "display_text": "Resets all propagated. That will be all. Have a fantastic weekend.",
@@ -503,35 +512,10 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 6.9,
-      "days_since_last": 3.2,
-      "last_reset_at": "2026-09-26T18:17:54.000Z",
-      "total": 55
+      "days_since_last": 0.4,
+      "last_reset_at": "2026-09-29T19:00:00.000Z",
+      "total": 56
     },
-    "watch": {
-      "context_text": null,
-      "context_tweet_id": null,
-      "context_tweet_url": null,
-      "display_context_text": null,
-      "display_text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
-      "episode_hints": [
-        {
-          "context_text": null,
-          "display_context_text": null,
-          "display_text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
-          "observed_at": "2026-09-27T10:39:35.426Z",
-          "text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
-          "tweet_id": "manual-devday-20260929",
-          "tweet_url": ""
-        }
-      ],
-      "expires_at": "2026-09-30T06:59:59.999Z",
-      "forecast_window": "around OpenAI DevDay 2026 on September 29 (Pacific Time)",
-      "level": "strong",
-      "observed_at": "2026-09-27T10:39:35.426Z",
-      "reset_chance": null,
-      "text": "OpenAI DevDay 2026 is on September 29 (Pacific Time). We expect a possible Codex reset around the event.",
-      "tweet_id": "manual-devday-20260929",
-      "tweet_url": ""
-    }
+    "watch": null
   }
 }
