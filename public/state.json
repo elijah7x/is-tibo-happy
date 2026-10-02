@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-01T23:28:07.611Z",
+  "fetched_at": "2026-10-02T02:36:57.798Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -509,10 +509,18 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": null,
+    "scheduled": {
+      "announced_at": "2026-10-02T02:14:51.000Z",
+      "display_text": "Global reset landing tomorrow 10am PST for all paid ChatGPT accounts. Apologies for the slow start with GPT-6.1 Sol, it's now back to running at expected speeds after the massive load spike in the first two days.",
+      "reset_type": "regular",
+      "scheduled_for": "2026-10-02T17:00:00Z",
+      "text": "Global reset landing tomorrow 10am PST for all paid ChatGPT accounts. Apologies for the slow start with GPT-6.1 Sol, it's now back to running at expected speeds after the massive load spike in the first two days.",
+      "tweet_id": "2105843926221660585",
+      "tweet_url": "https://x.com/thsottiaux/status/2105843926221660585"
+    },
     "stats": {
       "avg_interval_days": 6.9,
-      "days_since_last": 2.2,
+      "days_since_last": 2.3,
       "last_reset_at": "2026-09-29T19:00:00.000Z",
       "total": 56
     },
