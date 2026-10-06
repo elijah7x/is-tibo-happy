@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-06T19:42:28.141Z",
+  "fetched_at": "2026-10-06T23:22:09.201Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -521,10 +521,44 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 6.8,
-      "days_since_last": 3.9,
+      "days_since_last": 4.1,
       "last_reset_at": "2026-10-02T21:18:48.000Z",
       "total": 57
     },
-    "watch": null
+    "watch": {
+      "context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
+      "context_tweet_id": "2107558459713425516",
+      "context_tweet_url": "https://x.com/i/status/2107558459713425516",
+      "display_context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
+      "display_text": "@TokenGremlin I accept your vote",
+      "episode_hints": [
+        {
+          "context_text": "Vote",
+          "display_context_text": "Vote",
+          "display_text": "Four updates or a reset. Or both. How was day 2. https://t.co/s8HNYAaVjH",
+          "observed_at": "2026-10-06T21:07:55.000Z",
+          "text": "Four updates or a reset. Or both. How was day 2. https://t.co/s8HNYAaVjH",
+          "tweet_id": "2107578625419866469",
+          "tweet_url": "https://x.com/thsottiaux/status/2107578625419866469"
+        },
+        {
+          "context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
+          "display_context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
+          "display_text": "@TokenGremlin I accept your vote",
+          "observed_at": "2026-10-06T22:02:57.000Z",
+          "text": "@TokenGremlin I accept your vote",
+          "tweet_id": "2107592473048715573",
+          "tweet_url": "https://x.com/thsottiaux/status/2107592473048715573"
+        }
+      ],
+      "expires_at": "2026-10-07T07:00:00.000Z",
+      "forecast_window": "later today",
+      "level": "elevated",
+      "observed_at": "2026-10-06T22:02:57.000Z",
+      "reset_chance": 40,
+      "text": "@TokenGremlin I accept your vote",
+      "tweet_id": "2107592473048715573",
+      "tweet_url": "https://x.com/thsottiaux/status/2107592473048715573"
+    }
   }
 }
