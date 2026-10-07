@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-07T02:36:03.214Z",
+  "fetched_at": "2026-10-07T09:23:22.862Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-07T03:35:09.000Z",
+        "display_text": "We shipped four things that were deemed good to great and some math proofs, but the vote is clear and the community demands a reset. I did calibrate it and it *seems* that the game is rigged in reset's favor, but such are the rules at the moment.\n\nTherefore ... the reset has been https://t.co/mHSI0Pcu4M",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "We shipped four things that were deemed good to great and some math proofs, but the vote is clear and the community demands a reset. I did calibrate it and it *seems* that the game is rigged in reset's favor, but such are the rules at the moment.\n\nTherefore ... the reset has been https://t.co/mHSI0Pcu4M",
+        "tweet_id": "2107676072871600470",
+        "tweet_url": "https://x.com/thsottiaux/status/2107676072871600470"
+      },
       {
         "announced_at": "2026-10-02T21:18:48.000Z",
         "display_text": "Reset all propagated. Enjoy. https://t.co/GaVJhbptR0",
@@ -521,44 +530,10 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 6.8,
-      "days_since_last": 4.2,
-      "last_reset_at": "2026-10-02T21:18:48.000Z",
-      "total": 57
+      "days_since_last": 0.2,
+      "last_reset_at": "2026-10-07T03:35:09.000Z",
+      "total": 58
     },
-    "watch": {
-      "context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
-      "context_tweet_id": "2107558459713425516",
-      "context_tweet_url": "https://x.com/i/status/2107558459713425516",
-      "display_context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
-      "display_text": "@TokenGremlin I accept your vote",
-      "episode_hints": [
-        {
-          "context_text": "Vote",
-          "display_context_text": "Vote",
-          "display_text": "Four updates or a reset. Or both. How was day 2. https://t.co/s8HNYAaVjH",
-          "observed_at": "2026-10-06T21:07:55.000Z",
-          "text": "Four updates or a reset. Or both. How was day 2. https://t.co/s8HNYAaVjH",
-          "tweet_id": "2107578625419866469",
-          "tweet_url": "https://x.com/thsottiaux/status/2107578625419866469"
-        },
-        {
-          "context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
-          "display_context_text": "Tibo would never let me be one of the judges for these “improvements” he keeps announcing, because I would’ve already voted for a reset today.",
-          "display_text": "@TokenGremlin I accept your vote",
-          "observed_at": "2026-10-06T22:02:57.000Z",
-          "text": "@TokenGremlin I accept your vote",
-          "tweet_id": "2107592473048715573",
-          "tweet_url": "https://x.com/thsottiaux/status/2107592473048715573"
-        }
-      ],
-      "expires_at": "2026-10-07T07:00:00.000Z",
-      "forecast_window": "later today",
-      "level": "elevated",
-      "observed_at": "2026-10-06T22:02:57.000Z",
-      "reset_chance": 40,
-      "text": "@TokenGremlin I accept your vote",
-      "tweet_id": "2107592473048715573",
-      "tweet_url": "https://x.com/thsottiaux/status/2107592473048715573"
-    }
+    "watch": null
   }
 }
