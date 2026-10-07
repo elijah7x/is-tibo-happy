@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-07T16:48:21.182Z",
+  "fetched_at": "2026-10-07T21:58:08.720Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -527,10 +527,18 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": null,
+    "scheduled": {
+      "announced_at": "2026-10-07T19:19:33.000Z",
+      "display_text": "Will be there by EOD PST.",
+      "reset_type": "banked",
+      "scheduled_for": "2026-10-08T07:00:00Z",
+      "text": "Will be there by EOD PST.",
+      "tweet_id": "2107913738791596286",
+      "tweet_url": "https://x.com/thsottiaux/status/2107913738791596286"
+    },
     "stats": {
       "avg_interval_days": 6.8,
-      "days_since_last": 0.6,
+      "days_since_last": 0.8,
       "last_reset_at": "2026-10-07T03:35:09.000Z",
       "total": 58
     },
