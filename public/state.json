@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-08T01:53:34.844Z",
+  "fetched_at": "2026-10-08T08:53:41.360Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-08T03:44:55.000Z",
+        "display_text": "Confirmed landed across all accounts. How are we doing so far? https://t.co/tzw7dNX4pN",
+        "reset_type": "banked",
+        "source": "webhook",
+        "text": "Confirmed landed across all accounts. How are we doing so far? https://t.co/tzw7dNX4pN",
+        "tweet_id": "2108040921044639779",
+        "tweet_url": "https://x.com/thsottiaux/status/2108040921044639779"
+      },
       {
         "announced_at": "2026-10-07T03:35:09.000Z",
         "display_text": "We shipped four things that were deemed good to great and some math proofs, but the vote is clear and the community demands a reset. I did calibrate it and it *seems* that the game is rigged in reset's favor, but such are the rules at the moment.\n\nTherefore ... the reset has been https://t.co/mHSI0Pcu4M",
@@ -527,20 +536,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-10-07T19:19:33.000Z",
-      "display_text": "Will be there by EOD PST.",
-      "reset_type": "banked",
-      "scheduled_for": "2026-10-08T07:00:00Z",
-      "text": "Will be there by EOD PST.",
-      "tweet_id": "2107913738791596286",
-      "tweet_url": "https://x.com/thsottiaux/status/2107913738791596286"
-    },
+    "scheduled": null,
     "stats": {
-      "avg_interval_days": 6.8,
-      "days_since_last": 0.9,
-      "last_reset_at": "2026-10-07T03:35:09.000Z",
-      "total": 58
+      "avg_interval_days": 6.7,
+      "days_since_last": 0.2,
+      "last_reset_at": "2026-10-08T03:44:55.000Z",
+      "total": 59
     },
     "watch": null
   }
