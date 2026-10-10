@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-10T20:14:24.587Z",
+  "fetched_at": "2026-10-10T23:43:09.381Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -536,10 +536,18 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": null,
+    "scheduled": {
+      "announced_at": "2026-10-10T22:16:20.000Z",
+      "display_text": "Global reset by EOD. May the tokens do good things for you.",
+      "reset_type": "regular",
+      "scheduled_for": "2026-10-11T07:00:00.000Z",
+      "text": "Global reset by EOD. May the tokens do good things for you.",
+      "tweet_id": "2109045392684032299",
+      "tweet_url": "https://x.com/thsottiaux/status/2109045392684032299"
+    },
     "stats": {
       "avg_interval_days": 6.7,
-      "days_since_last": 2.7,
+      "days_since_last": 2.8,
       "last_reset_at": "2026-10-08T03:44:55.000Z",
       "total": 59
     },
