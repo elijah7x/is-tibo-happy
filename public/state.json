@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-11T02:15:40.142Z",
+  "fetched_at": "2026-10-11T09:10:18.108Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-11T04:01:09.000Z",
+        "display_text": "Put the reset in the bag. All propagated. https://t.co/HGxaD3Zdcj",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "Put the reset in the bag. All propagated. https://t.co/HGxaD3Zdcj",
+        "tweet_id": "2109132167112782291",
+        "tweet_url": "https://x.com/thsottiaux/status/2109132167112782291"
+      },
       {
         "announced_at": "2026-10-08T03:44:55.000Z",
         "display_text": "Confirmed landed across all accounts. How are we doing so far? https://t.co/tzw7dNX4pN",
@@ -536,20 +545,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-10-10T22:16:20.000Z",
-      "display_text": "Global reset by EOD. May the tokens do good things for you.",
-      "reset_type": "regular",
-      "scheduled_for": "2026-10-11T07:00:00.000Z",
-      "text": "Global reset by EOD. May the tokens do good things for you.",
-      "tweet_id": "2109045392684032299",
-      "tweet_url": "https://x.com/thsottiaux/status/2109045392684032299"
-    },
+    "scheduled": null,
     "stats": {
-      "avg_interval_days": 6.7,
-      "days_since_last": 2.9,
-      "last_reset_at": "2026-10-08T03:44:55.000Z",
-      "total": 59
+      "avg_interval_days": 6.6,
+      "days_since_last": 0.2,
+      "last_reset_at": "2026-10-11T04:01:09.000Z",
+      "total": 60
     },
     "watch": null
   }
