@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-13T03:14:31.777Z",
+  "fetched_at": "2026-10-13T10:54:34.483Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-13T05:06:06.000Z",
+        "display_text": "What would you like with your side of reset? It's done. https://t.co/gpNaB6otgy",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "What would you like with your side of reset? It's done. https://t.co/gpNaB6otgy",
+        "tweet_id": "2109873287853707513",
+        "tweet_url": "https://x.com/thsottiaux/status/2109873287853707513"
+      },
       {
         "announced_at": "2026-10-11T04:01:09.000Z",
         "display_text": "Put the reset in the bag. All propagated. https://t.co/HGxaD3Zdcj",
@@ -545,20 +554,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-10-13T01:03:59.000Z",
-      "display_text": "Global reset landing by EOD PST time. Enjoy",
-      "reset_type": "regular",
-      "scheduled_for": "2026-10-13T07:00:00.000Z",
-      "text": "Global reset landing by EOD PST time. Enjoy",
-      "tweet_id": "2109812360596865224",
-      "tweet_url": "https://x.com/thsottiaux/status/2109812360596865224"
-    },
+    "scheduled": null,
     "stats": {
-      "avg_interval_days": 6.6,
-      "days_since_last": 2,
-      "last_reset_at": "2026-10-11T04:01:09.000Z",
-      "total": 60
+      "avg_interval_days": 6.5,
+      "days_since_last": 0.2,
+      "last_reset_at": "2026-10-13T05:06:06.000Z",
+      "total": 61
     },
     "watch": null
   }
