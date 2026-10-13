@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-12T22:33:38.109Z",
+  "fetched_at": "2026-10-13T03:14:31.777Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -545,10 +545,18 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": null,
+    "scheduled": {
+      "announced_at": "2026-10-13T01:03:59.000Z",
+      "display_text": "Global reset landing by EOD PST time. Enjoy",
+      "reset_type": "regular",
+      "scheduled_for": "2026-10-13T07:00:00.000Z",
+      "text": "Global reset landing by EOD PST time. Enjoy",
+      "tweet_id": "2109812360596865224",
+      "tweet_url": "https://x.com/thsottiaux/status/2109812360596865224"
+    },
     "stats": {
       "avg_interval_days": 6.6,
-      "days_since_last": 1.8,
+      "days_since_last": 2,
       "last_reset_at": "2026-10-11T04:01:09.000Z",
       "total": 60
     },
