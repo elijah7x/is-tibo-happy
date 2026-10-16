@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-16T00:34:38.985Z",
+  "fetched_at": "2026-10-16T05:09:31.662Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -566,10 +566,35 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 6.4,
-      "days_since_last": 0.8,
+      "days_since_last": 0.9,
       "last_reset_at": "2026-10-15T06:28:13.000Z",
       "total": 62
     },
-    "watch": null
+    "watch": {
+      "context_text": "I miss the old Tibo, reset the usage Tibo\nThe “oops, again” Tibo, back to a hundred Tibo\nI hate the new Tibo, arguing in quotes Tibo\nThe 28 days Tibo, beefing with poteto Tibo\nI miss the sweet Tibo, free weekend reset Tibo\nI gotta say, back then I’d never hit my weekly, Tibo\nSee I believed in Tibo, there weren’t any Tibos\nAnd now I look around and there's so many Tibos",
+      "context_tweet_id": "2110880198660882719",
+      "context_tweet_url": "https://x.com/i/status/2110880198660882719",
+      "display_context_text": "I miss the old Tibo, reset the usage Tibo\nThe “oops, again” Tibo, back to a hundred Tibo\nI hate the new Tibo, arguing in quotes Tibo\nThe 28 days Tibo, beefing with poteto Tibo\nI miss the sweet Tibo, free weekend reset Tibo\nI gotta say, back then I’d never hit my weekly, Tibo\nSee I believed in Tibo, there weren’t any Tibos\nAnd now I look around and there's so many Tibos",
+      "display_text": "@maria_rcks Can’t argue with that, Let’s break the cycle.",
+      "episode_hints": [
+        {
+          "context_text": "I miss the old Tibo, reset the usage Tibo\nThe “oops, again” Tibo, back to a hundred Tibo\nI hate the new Tibo, arguing in quotes Tibo\nThe 28 days Tibo, beefing with poteto Tibo\nI miss the sweet Tibo, free weekend reset Tibo\nI gotta say, back then I’d never hit my weekly, Tibo\nSee I believed in Tibo, there weren’t any Tibos\nAnd now I look around and there's so many Tibos",
+          "display_context_text": "I miss the old Tibo, reset the usage Tibo\nThe “oops, again” Tibo, back to a hundred Tibo\nI hate the new Tibo, arguing in quotes Tibo\nThe 28 days Tibo, beefing with poteto Tibo\nI miss the sweet Tibo, free weekend reset Tibo\nI gotta say, back then I’d never hit my weekly, Tibo\nSee I believed in Tibo, there weren’t any Tibos\nAnd now I look around and there's so many Tibos",
+          "display_text": "@maria_rcks Can’t argue with that, Let’s break the cycle.",
+          "observed_at": "2026-10-16T04:30:52.000Z",
+          "text": "@maria_rcks Can’t argue with that, Let’s break the cycle.",
+          "tweet_id": "2110951585983631505",
+          "tweet_url": "https://x.com/thsottiaux/status/2110951585983631505"
+        }
+      ],
+      "expires_at": "2026-10-17T05:00:00.000Z",
+      "forecast_window": "within 24h",
+      "level": "elevated",
+      "observed_at": "2026-10-16T04:30:52.000Z",
+      "reset_chance": 40,
+      "text": "@maria_rcks Can’t argue with that, Let’s break the cycle.",
+      "tweet_id": "2110951585983631505",
+      "tweet_url": "https://x.com/thsottiaux/status/2110951585983631505"
+    }
   }
 }
