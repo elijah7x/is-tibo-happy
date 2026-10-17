@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-17T21:03:04.160Z",
+  "fetched_at": "2026-10-17T23:05:23.145Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-17T21:12:21.000Z",
+        "display_text": "Done",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "Done",
+        "tweet_id": "2111566005684289735",
+        "tweet_url": "https://x.com/thsottiaux/status/2111566005684289735"
+      },
       {
         "announced_at": "2026-10-15T06:28:13.000Z",
         "display_text": "Done and dusted https://t.co/0fehr43VS4",
@@ -563,20 +572,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-10-17T16:21:13.000Z",
-      "display_text": "Landing sometime today by EOD PST",
-      "reset_type": "regular",
-      "scheduled_for": "2026-10-18T07:00:00.000Z",
-      "text": "Landing sometime today by EOD PST",
-      "tweet_id": "2111492738025959922",
-      "tweet_url": "https://x.com/thsottiaux/status/2111492738025959922"
-    },
+    "scheduled": null,
     "stats": {
       "avg_interval_days": 6.4,
-      "days_since_last": 2.6,
-      "last_reset_at": "2026-10-15T06:28:13.000Z",
-      "total": 62
+      "days_since_last": 0.1,
+      "last_reset_at": "2026-10-17T21:12:21.000Z",
+      "total": 63
     },
     "watch": null
   }
