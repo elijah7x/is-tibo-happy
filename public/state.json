@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-20T05:25:38.943Z",
+  "fetched_at": "2026-10-20T10:20:30.335Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-20T06:33:48.000Z",
+        "display_text": "Day 15/ Nevermind, we're still cooking... and reset. Enjoy. https://t.co/RZ9WhtI802",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "Day 15/ Nevermind, we're still cooking... and reset. Enjoy. https://t.co/RZ9WhtI802",
+        "tweet_id": "2112432076767289678",
+        "tweet_url": "https://x.com/thsottiaux/status/2112432076767289678"
+      },
       {
         "announced_at": "2026-10-17T21:12:21.000Z",
         "display_text": "Done",
@@ -574,10 +583,10 @@
     ],
     "scheduled": null,
     "stats": {
-      "avg_interval_days": 6.4,
-      "days_since_last": 2.3,
-      "last_reset_at": "2026-10-17T21:12:21.000Z",
-      "total": 63
+      "avg_interval_days": 6.3,
+      "days_since_last": 0.2,
+      "last_reset_at": "2026-10-20T06:33:48.000Z",
+      "total": 64
     },
     "watch": null
   }
