@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-10-22T01:58:14.621Z",
+  "fetched_at": "2026-10-22T07:30:31.993Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -581,10 +581,18 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": null,
+    "scheduled": {
+      "announced_at": "2026-10-22T06:55:54.000Z",
+      "display_text": "Lands tomorrow before 10am PST.",
+      "reset_type": "regular",
+      "scheduled_for": "2026-10-22T17:00:00.000Z",
+      "text": "Lands tomorrow before 10am PST.",
+      "tweet_id": "2113162413008884099",
+      "tweet_url": "https://x.com/thsottiaux/status/2113162413008884099"
+    },
     "stats": {
       "avg_interval_days": 6.3,
-      "days_since_last": 1.8,
+      "days_since_last": 2,
       "last_reset_at": "2026-10-20T06:33:48.000Z",
       "total": 64
     },
