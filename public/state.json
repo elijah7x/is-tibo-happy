@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-24T01:10:51.644Z",
+  "fetched_at": "2026-10-24T06:12:41.483Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-23T17:00:00.000Z",
+        "display_text": "Codex usage limits have been reset. Check your limits.",
+        "reset_type": "regular",
+        "source": "observed",
+        "text": "Codex usage limits have been reset. Check your limits.",
+        "tweet_id": "observed-2113492502355562875",
+        "tweet_url": "https://x.com/thsottiaux/status/2113492502355562875"
+      },
       {
         "announced_at": "2026-10-22T17:00:00.000Z",
         "display_text": "Codex usage limits have been reset. Check your limits.",
@@ -590,20 +599,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-10-23T04:47:34.000Z",
-      "display_text": "Landing tomorrow before 10am PST together with a small ship.",
-      "reset_type": "regular",
-      "scheduled_for": "2026-10-23T17:00:00.000Z",
-      "text": "Landing tomorrow before 10am PST together with a small ship.",
-      "tweet_id": "2113492502355562875",
-      "tweet_url": "https://x.com/thsottiaux/status/2113492502355562875"
-    },
+    "scheduled": null,
     "stats": {
-      "avg_interval_days": 6.3,
-      "days_since_last": 1.3,
-      "last_reset_at": "2026-10-22T17:00:00.000Z",
-      "total": 65
+      "avg_interval_days": 6.2,
+      "days_since_last": 0.6,
+      "last_reset_at": "2026-10-23T17:00:00.000Z",
+      "total": 66
     },
     "watch": null
   }
