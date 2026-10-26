@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-26T05:28:32.929Z",
+  "fetched_at": "2026-10-26T11:34:51.319Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-26T07:00:00.000Z",
+        "display_text": "Codex usage limits have been reset. Check your limits.",
+        "reset_type": "regular",
+        "source": "observed",
+        "text": "Codex usage limits have been reset. Check your limits.",
+        "tweet_id": "observed-2114588174249071102",
+        "tweet_url": "https://x.com/thsottiaux/status/2114588174249071102"
+      },
       {
         "announced_at": "2026-10-25T06:06:16.000Z",
         "display_text": "It is all propagated. Enjoy some mad codexing tomorrow. Fun week ahead too. https://t.co/qOrzwSeIZZ https://t.co/xKaK95EAly",
@@ -610,10 +619,10 @@
     ],
     "scheduled": null,
     "stats": {
-      "avg_interval_days": 6.1,
-      "days_since_last": 1,
-      "last_reset_at": "2026-10-25T06:06:16.000Z",
-      "total": 67
+      "avg_interval_days": 6,
+      "days_since_last": 0.2,
+      "last_reset_at": "2026-10-26T07:00:00.000Z",
+      "total": 68
     },
     "watch": null
   }
