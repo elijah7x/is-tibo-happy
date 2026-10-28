@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-10-28T01:49:40.647Z",
+  "fetched_at": "2026-10-28T08:22:43.275Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-10-28T06:29:38.000Z",
+        "display_text": "And it's done. See you tomorrow for some good news. https://t.co/WhJle2cWRG",
+        "reset_type": "regular",
+        "source": "webhook",
+        "text": "And it's done. See you tomorrow for some good news. https://t.co/WhJle2cWRG",
+        "tweet_id": "2115330127886463244",
+        "tweet_url": "https://x.com/thsottiaux/status/2115330127886463244"
+      },
       {
         "announced_at": "2026-10-26T07:00:00.000Z",
         "display_text": "Codex usage limits have been reset. Check your limits.",
@@ -620,9 +629,9 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 6,
-      "days_since_last": 1.8,
-      "last_reset_at": "2026-10-26T07:00:00.000Z",
-      "total": 68
+      "days_since_last": 0.1,
+      "last_reset_at": "2026-10-28T06:29:38.000Z",
+      "total": 69
     },
     "watch": null
   }
