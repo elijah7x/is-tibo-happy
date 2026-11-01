@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-11-01T00:28:07.251Z",
+  "fetched_at": "2026-11-01T06:45:40.013Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-11-01T00:43:20.000Z",
+        "display_text": "Banked 1/2",
+        "reset_type": "banked",
+        "source": "webhook",
+        "text": "Banked 1/2",
+        "tweet_id": "2116692529970311254",
+        "tweet_url": "https://x.com/thsottiaux/status/2116692529970311254"
+      },
       {
         "announced_at": "2026-10-28T06:29:38.000Z",
         "display_text": "And it's done. See you tomorrow for some good news. https://t.co/WhJle2cWRG",
@@ -626,21 +635,12 @@
         "tweet_url": "https://x.com/thsottiaux/status/1968163721034994139"
       }
     ],
-    "scheduled": {
-      "announced_at": "2026-10-31T05:42:26.000Z",
-      "display_text": "Day 26/ You can now easily switch between multiple accounts on mobile, and coming soon to desktop too. Next two days will be resets… banked… do with this what you may 👀.\n\nhttps://t.co/iQxsqbuk0f",
-      "notification_id": "2116405414921384099",
-      "reset_type": "banked",
-      "scheduled_for": "2026-11-02T08:00:00.000Z",
-      "text": "Day 26/ You can now easily switch between multiple accounts on mobile, and coming soon to desktop too. Next two days will be resets… banked… do with this what you may 👀.\n\nhttps://t.co/iQxsqbuk0f",
-      "tweet_id": "2116405414921384099",
-      "tweet_url": "https://x.com/thsottiaux/status/2116405414921384099"
-    },
+    "scheduled": null,
     "stats": {
-      "avg_interval_days": 6,
-      "days_since_last": 3.7,
-      "last_reset_at": "2026-10-28T06:29:38.000Z",
-      "total": 69
+      "avg_interval_days": 5.9,
+      "days_since_last": 0.3,
+      "last_reset_at": "2026-11-01T00:43:20.000Z",
+      "total": 70
     },
     "watch": null
   }
