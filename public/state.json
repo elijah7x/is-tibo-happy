@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-11-01T22:46:05.727Z",
+  "fetched_at": "2026-11-02T01:55:30.178Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-11-01T23:27:20.000Z",
+        "display_text": "Day 28/ Banked 2/2",
+        "reset_type": "banked",
+        "source": "webhook",
+        "text": "Day 28/ Banked 2/2",
+        "tweet_id": "2117035794678546764",
+        "tweet_url": "https://x.com/thsottiaux/status/2117035794678546764"
+      },
       {
         "announced_at": "2026-11-01T00:43:20.000Z",
         "display_text": "Banked 1/2",
@@ -638,9 +647,9 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 5.9,
-      "days_since_last": 0.9,
-      "last_reset_at": "2026-11-01T00:43:20.000Z",
-      "total": 70
+      "days_since_last": 0.1,
+      "last_reset_at": "2026-11-01T23:27:20.000Z",
+      "total": 71
     },
     "watch": null
   }
