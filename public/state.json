@@ -1,5 +1,5 @@
 {
-  "fetched_at": "2026-11-11T00:37:44.844Z",
+  "fetched_at": "2026-11-11T07:15:01.681Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
@@ -647,10 +647,44 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 5.9,
-      "days_since_last": 9,
+      "days_since_last": 9.3,
       "last_reset_at": "2026-11-01T23:27:20.000Z",
       "total": 71
     },
-    "watch": null
+    "watch": {
+      "context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
+      "context_tweet_id": "2120410006273380750",
+      "context_tweet_url": "https://x.com/i/status/2120410006273380750",
+      "display_context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
+      "display_text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
+      "episode_hints": [
+        {
+          "context_text": null,
+          "display_context_text": null,
+          "display_text": "It’s been a while without resets. Maybe I should come back out of the basement",
+          "observed_at": "2026-11-11T06:55:15.000Z",
+          "text": "It’s been a while without resets. Maybe I should come back out of the basement",
+          "tweet_id": "2120410006273380750",
+          "tweet_url": "https://x.com/thsottiaux/status/2120410006273380750"
+        },
+        {
+          "context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
+          "display_context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
+          "display_text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
+          "observed_at": "2026-11-11T06:57:08.000Z",
+          "text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
+          "tweet_id": "2120410480204525936",
+          "tweet_url": "https://x.com/thsottiaux/status/2120410480204525936"
+        }
+      ],
+      "expires_at": "2026-11-13T08:00:00.000Z",
+      "forecast_window": "by end of Thursday",
+      "level": "elevated",
+      "observed_at": "2026-11-11T06:57:08.000Z",
+      "reset_chance": 65,
+      "text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
+      "tweet_id": "2120410480204525936",
+      "tweet_url": "https://x.com/thsottiaux/status/2120410480204525936"
+    }
   }
 }
