@@ -1,9 +1,18 @@
 {
-  "fetched_at": "2026-11-12T19:12:07.850Z",
+  "fetched_at": "2026-11-13T00:39:19.189Z",
   "schema": 1,
   "source_url": "https://codex-resets.com/api/resets",
   "upstream": {
     "events": [
+      {
+        "announced_at": "2026-11-12T21:59:39.000Z",
+        "display_text": "We shipped some good updates to dots today and the banked reset has been activated and should land in everyones accounts sometime soon! https://t.co/Y7Mnp6Cuu1",
+        "reset_type": "banked",
+        "source": "webhook",
+        "text": "We shipped some good updates to dots today and the banked reset has been activated and should land in everyones accounts sometime soon! https://t.co/Y7Mnp6Cuu1",
+        "tweet_id": "2120999993079451919",
+        "tweet_url": "https://x.com/thsottiaux/status/2120999993079451919"
+      },
       {
         "announced_at": "2026-11-01T23:27:20.000Z",
         "display_text": "Day 28/ Banked 2/2",
@@ -647,44 +656,10 @@
     "scheduled": null,
     "stats": {
       "avg_interval_days": 5.9,
-      "days_since_last": 10.8,
-      "last_reset_at": "2026-11-01T23:27:20.000Z",
-      "total": 71
+      "days_since_last": 0.1,
+      "last_reset_at": "2026-11-12T21:59:39.000Z",
+      "total": 72
     },
-    "watch": {
-      "context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
-      "context_tweet_id": "2120410006273380750",
-      "context_tweet_url": "https://x.com/i/status/2120410006273380750",
-      "display_context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
-      "display_text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
-      "episode_hints": [
-        {
-          "context_text": null,
-          "display_context_text": null,
-          "display_text": "It’s been a while without resets. Maybe I should come back out of the basement",
-          "observed_at": "2026-11-11T06:55:15.000Z",
-          "text": "It’s been a while without resets. Maybe I should come back out of the basement",
-          "tweet_id": "2120410006273380750",
-          "tweet_url": "https://x.com/thsottiaux/status/2120410006273380750"
-        },
-        {
-          "context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
-          "display_context_text": "It’s been a while without resets. Maybe I should come back out of the basement",
-          "display_text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
-          "observed_at": "2026-11-11T06:57:08.000Z",
-          "text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
-          "tweet_id": "2120410480204525936",
-          "tweet_url": "https://x.com/thsottiaux/status/2120410480204525936"
-        }
-      ],
-      "expires_at": "2026-11-13T08:00:00.000Z",
-      "forecast_window": "by end of Thursday",
-      "level": "elevated",
-      "observed_at": "2026-11-11T06:57:08.000Z",
-      "reset_chance": 65,
-      "text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
-      "tweet_id": "2120410480204525936",
-      "tweet_url": "https://x.com/thsottiaux/status/2120410480204525936"
-    }
+    "watch": null
   }
 }
