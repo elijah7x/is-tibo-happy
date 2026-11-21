@@ -2,19 +2,14 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> [!IMPORTANT]
-> **Project status: paused.** Codex desktop **26.924.22138** (September 2026) and later ship with Electron's `nodeCliInspect` fuse turned off, which closes the only channel this project uses to draw the card. There is no other way in that meets our rules (no restarts, no app-bundle patching, no persistent debug port), so development has stopped.
+> [!CAUTION]
+> **Project status: archived (November 2026). No further development.**
 >
-> | Codex desktop version | Status |
-> |---|---|
-> | up to **26.917.71314** | ✅ Works (last verified version) |
-> | **26.924.22138** and later | ❌ The card doesn't show |
+> Codex desktop **26.924.22138** (September 2026) and later ship with Electron's `nodeCliInspect` fuse turned off, which closed the only way to draw a card inside Codex. Codex's official plugin system can only add a panel you have to open yourself, which defeats the point of a glance-at-it companion, so the project ends here.
 >
-> **Installing on a newer Codex does no harm.** The daemon reads the fuse before doing anything, and if it's off it just waits: it never sends signals to Codex, never restarts or relaunches it, and never opens a debug port. Users already on an older Codex keep getting updates as usual.
->
-> **If a future Codex build turns the fuse back on, the card comes back on its own** (at the latest after your next login), with no reinstall needed. We'll watch for that.
->
-> On v0.3.9 and Codex quits a few seconds after you open it? That was a bug fixed in v0.3.10. Your install updates itself within a day, or right away if you run: `launchctl kickstart -k gui/$(id -u)/com.istibohappy.daemon`
+> - The data mirror (`public/state.json`) is no longer updated. Clients still on an older Codex fall back to the upstream sources directly.
+> - No new releases. If you installed it, please uninstall (see below). It does nothing on current Codex builds.
+> - Reset history and live status: [codex-resets.com](https://codex-resets.com).
 
 A tiny companion that lives inside the Codex desktop profile menu: pixel-art Tibo, his mood, and one line about the next reset.
 
